@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UGUI 线性剧情系统教学案</title>
+  <style>
+    :root {
+      --paper: #f7f3e8;
+      --card: #fffdf7;
+      --ink: #27251f;
+      --muted: #6b665b;
+      --line: #d7cfbd;
+      --primary: #315a52;
+      --primary-soft: #dcebe6;
+      --accent: #d47c45;
+      --accent-soft: #f7e4d5;
+      --blue: #416c91;
+      --blue-soft: #e3edf5;
+      --danger: #9d4e49;
+      --code: #202724;
+      --code-ink: #e8f2ed;
+      --shadow: 0 10px 32px rgba(60, 52, 37, 0.09);
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background:
+        radial-gradient(circle at 12% 8%, rgba(212, 124, 69, 0.12), transparent 26rem),
+        radial-gradient(circle at 88% 18%, rgba(49, 90, 82, 0.12), transparent 24rem),
+        var(--paper);
+      font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+      line-height: 1.75;
+    }
+
+    body.large-text { font-size: 19px; }
+
+    a { color: var(--primary); }
+
+    .page {
+      width: min(1180px, calc(100% - 32px));
+      margin: 24px auto 72px;
+    }
+
+    .toolbar {
+      position: sticky;
+      top: 12px;
+      z-index: 10;
+      display: flex;
+      justify-content: flex-end;
+      gap: 10px;
+      margin-bottom: 14px;
+      pointer-events: none;
+    }
+
+    .toolbar button {
+      pointer-events: auto;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 9px 15px;
+      color: var(--ink);
+      background: rgba(255, 253, 247, 0.92);
+      box-shadow: var(--shadow);
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: 56px 54px;
+      border: 1px solid var(--line);
+      border-radius: 28px;
+      color: #f7fbf8;
+      background: linear-gradient(135deg, #284940 0%, #315a52 56%, #3d6d62 100%);
+      box-shadow: var(--shadow);
+    }
+
+    .hero::after {
+      content: "";
+      position: absolute;
+      right: -90px;
+      bottom: -120px;
+      width: 360px;
+      height: 360px;
+      border: 46px solid rgba(255, 255, 255, 0.08);
+      border-radius: 50%;
+    }
+
+    .eyebrow {
+      margin: 0 0 8px;
+      color: #d7ebe4;
+      font-size: 0.92rem;
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+    }
+
+    h1 {
+      max-width: 850px;
+      margin: 0;
+      font-size: clamp(2.25rem, 5vw, 4.4rem);
+      line-height: 1.12;
+      letter-spacing: -0.04em;
+    }
+
+    .subtitle {
+      max-width: 780px;
+      margin: 22px 0 0;
+      color: #e6f0ec;
+      font-size: 1.12rem;
+    }
+
+    .hero-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 28px;
+    }
+
+    .hero-tags span {
+      padding: 7px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.09);
+      font-size: 0.9rem;
+    }
+
+    .meta-grid,
+    .grid-2,
+    .grid-3,
+    .script-grid {
+      display: grid;
+      gap: 18px;
+    }
+
+    .meta-grid { grid-template-columns: repeat(4, 1fr); margin: 22px 0; }
+    .grid-2 { grid-template-columns: repeat(2, 1fr); }
+    .grid-3 { grid-template-columns: repeat(3, 1fr); }
+    .script-grid { grid-template-columns: repeat(2, 1fr); }
+
+    .card,
+    section {
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 253, 247, 0.94);
+      box-shadow: 0 6px 24px rgba(60, 52, 37, 0.055);
+    }
+
+    .meta-card { padding: 18px; }
+    .meta-card strong { display: block; color: var(--primary); font-size: 1.05rem; }
+    .meta-card span { color: var(--muted); font-size: 0.9rem; }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 250px minmax(0, 1fr);
+      gap: 22px;
+      align-items: start;
+    }
+
+    nav {
+      position: sticky;
+      top: 70px;
+      padding: 20px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: rgba(255, 253, 247, 0.94);
+      box-shadow: var(--shadow);
+    }
+
+    nav h2 { margin: 0 0 12px; font-size: 1rem; }
+    nav ol { margin: 0; padding-left: 1.35rem; }
+    nav li { margin: 7px 0; color: var(--muted); }
+    nav a { color: inherit; text-decoration: none; }
+    nav a:hover { color: var(--primary); }
+
+    main { min-width: 0; }
+
+    section {
+      margin-bottom: 22px;
+      padding: 30px;
+      scroll-margin-top: 82px;
+    }
+
+    section > h2 {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 0 0 20px;
+      font-size: 1.65rem;
+      line-height: 1.3;
+    }
+
+    section > h2 .num {
+      display: inline-grid;
+      width: 36px;
+      height: 36px;
+      place-items: center;
+      border-radius: 10px;
+      color: #fff;
+      background: var(--primary);
+      font-size: 0.95rem;
+    }
+
+    h3 { margin: 24px 0 10px; color: var(--primary); }
+    h4 { margin: 18px 0 8px; }
+    p { margin: 8px 0 14px; }
+    ul, ol { padding-left: 1.4rem; }
+    li { margin: 6px 0; }
+
+    .goal-card,
+    .script-card,
+    .activity,
+    .callout {
+      padding: 20px;
+      border-radius: 13px;
+    }
+
+    .goal-card { background: var(--primary-soft); }
+    .goal-card:nth-child(2) { background: var(--blue-soft); }
+    .goal-card:nth-child(3) { background: var(--accent-soft); }
+    .goal-card h3 { margin-top: 0; }
+
+    .callout {
+      margin: 18px 0;
+      border-left: 5px solid var(--accent);
+      background: var(--accent-soft);
+    }
+
+    .callout.info { border-color: var(--blue); background: var(--blue-soft); }
+    .callout.success { border-color: var(--primary); background: var(--primary-soft); }
+    .callout strong { display: block; margin-bottom: 4px; }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin: 20px 0;
+    }
+
+    .flow-step {
+      position: relative;
+      min-height: 118px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--card);
+    }
+
+    .flow-step:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      right: -13px;
+      top: 40%;
+      z-index: 2;
+      color: var(--accent);
+      font-size: 1.45rem;
+      font-weight: 900;
+    }
+
+    .flow-step b { display: block; color: var(--primary); }
+    .flow-step small { color: var(--muted); }
+
+    .architecture {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 14px;
+      align-items: center;
+      margin: 18px 0;
+    }
+
+    .architecture .column { display: grid; gap: 10px; }
+    .arch-box {
+      padding: 15px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: var(--card);
+    }
+    .arch-box.center { color: #fff; background: var(--primary); }
+    .arch-arrow { color: var(--accent); font-size: 2rem; font-weight: 900; }
+
+    .script-card {
+      border: 1px solid var(--line);
+      background: var(--card);
+    }
+    .script-card h3 { margin-top: 0; }
+    .script-card .role {
+      display: inline-block;
+      margin-bottom: 8px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      color: var(--primary);
+      background: var(--primary-soft);
+      font-size: 0.82rem;
+      font-weight: 800;
+    }
+
+    code {
+      padding: 0.12em 0.35em;
+      border-radius: 5px;
+      color: #304d47;
+      background: #e8efe9;
+      font-family: Consolas, "Cascadia Code", monospace;
+    }
+
+    pre {
+      overflow: auto;
+      margin: 14px 0 20px;
+      padding: 18px 20px;
+      border-radius: 13px;
+      color: var(--code-ink);
+      background: var(--code);
+      font: 0.9rem/1.65 Consolas, "Cascadia Code", monospace;
+      tab-size: 4;
+    }
+
+    pre code { padding: 0; color: inherit; background: transparent; }
+    .comment { color: #98b8a9; }
+    .keyword { color: #ffbd80; }
+    .type { color: #95ccec; }
+    .string { color: #d9e890; }
+
+    table {
+      width: 100%;
+      margin: 14px 0 20px;
+      border-collapse: collapse;
+      border-radius: 12px;
+      overflow: hidden;
+      font-size: 0.94rem;
+    }
+
+    th, td {
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th { color: #fff; background: var(--primary); }
+    tr:nth-child(even) td { background: #faf7ef; }
+
+    .timeline {
+      position: relative;
+      margin-left: 9px;
+      padding-left: 30px;
+      border-left: 3px solid var(--primary-soft);
+    }
+
+    .lesson-step {
+      position: relative;
+      margin-bottom: 24px;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      background: var(--card);
+    }
+
+    .lesson-step::before {
+      content: "";
+      position: absolute;
+      left: -41px;
+      top: 22px;
+      width: 15px;
+      height: 15px;
+      border: 4px solid var(--paper);
+      border-radius: 50%;
+      background: var(--accent);
+    }
+
+    .lesson-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+    }
+
+    .lesson-head h3 { margin: 0; }
+    .time { white-space: nowrap; color: var(--accent); font-weight: 800; }
+
+    details {
+      margin: 12px 0;
+      border: 1px solid var(--line);
+      border-radius: 11px;
+      background: var(--card);
+    }
+
+    summary {
+      padding: 12px 15px;
+      cursor: pointer;
+      color: var(--primary);
+      font-weight: 800;
+    }
+
+    details > div { padding: 0 15px 15px; }
+
+    .checklist { list-style: none; padding: 0; }
+    .checklist li { position: relative; padding-left: 30px; }
+    .checklist li::before {
+      content: "□";
+      position: absolute;
+      left: 0;
+      color: var(--primary);
+      font-size: 1.2rem;
+      font-weight: 800;
+    }
+
+    .board {
+      padding: 24px;
+      border-radius: 12px;
+      color: #e9f4ef;
+      background: #26332f;
+      font-family: "Microsoft YaHei", sans-serif;
+    }
+
+    .board pre { margin: 0; padding: 0; background: transparent; }
+
+    .rubric td:first-child { font-weight: 800; }
+    .score { color: var(--accent); font-weight: 900; }
+
+    footer {
+      margin-top: 24px;
+      padding: 24px;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    @media (max-width: 900px) {
+      .meta-grid { grid-template-columns: repeat(2, 1fr); }
+      .layout { grid-template-columns: 1fr; }
+      nav { position: static; }
+      .grid-2, .grid-3, .script-grid, .flow { grid-template-columns: 1fr; }
+      .flow-step:not(:last-child)::after { content: "↓"; right: 50%; top: auto; bottom: -20px; }
+      .architecture { grid-template-columns: 1fr; }
+      .arch-arrow { transform: rotate(90deg); text-align: center; }
+    }
+
+    @media (max-width: 560px) {
+      .page { width: min(100% - 18px, 1180px); }
+      .hero { padding: 36px 24px; }
+      section { padding: 22px 18px; }
+      .meta-grid { grid-template-columns: 1fr; }
+      .lesson-head { display: block; }
+      table { font-size: 0.82rem; }
+      th, td { padding: 9px; }
+    }
+
+    @media print {
+      body { background: #fff; font-size: 11pt; }
+      .page { width: 100%; margin: 0; }
+      .toolbar, nav { display: none; }
+      .layout { display: block; }
+      .hero { color: #000; background: #fff; border: 2px solid #333; box-shadow: none; }
+      .hero .subtitle, .hero .eyebrow { color: #333; }
+      .hero-tags span { color: #000; border-color: #777; background: #fff; }
+      section, .card { break-inside: avoid; box-shadow: none; }
+      pre { white-space: pre-wrap; }
+      details > div { display: block; }
+      a { color: #000; text-decoration: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="toolbar" aria-label="文档工具">
+      <button type="button" onclick="document.body.classList.toggle('large-text')">切换大字号</button>
+      <button type="button" onclick="window.print()">打印教学案</button>
+    </div>
+
+    <header class="hero">
+      <p class="eyebrow">Unity 6 · UGUI · C# 入门项目课</p>
+      <h1>用最简单的数据结构搭建论坛剧情循环</h1>
+      <p class="subtitle">
+        以当前 BBSGame 项目为案例，学习如何把一个职责过多的 StorySystem，拆成学生能够读懂、配置和继续扩展的线性剧情系统。
+      </p>
+      <div class="hero-tags">
+        <span>GameObject 显示与隐藏</span>
+        <span>Button 点击事件</span>
+        <span>[Serializable] 数据结构</span>
+        <span>数组与索引</span>
+        <span>职责分离</span>
+      </div>
+    </header>
+
+    <div class="meta-grid" aria-label="课程信息">
+      <div class="card meta-card"><strong>适用对象</strong><span>Unity 初学者 / 中职、高职或本科低年级</span></div>
+      <div class="card meta-card"><strong>建议课时</strong><span>3 课时，每课时 45 分钟</span></div>
+      <div class="card meta-card"><strong>教学方式</strong><span>讲解、演示、结对调试、独立扩展</span></div>
+      <div class="card meta-card"><strong>最终成果</strong><span>邮件 → 论坛 → 帖子 → 下一轮邮件</span></div>
+    </div>
+
+    <div class="layout">
+      <nav aria-label="教学案目录">
+        <h2>教学案目录</h2>
+        <ol>
+          <li><a href="#analysis">学情与项目分析</a></li>
+          <li><a href="#objectives">教学目标</a></li>
+          <li><a href="#focus">重点与难点</a></li>
+          <li><a href="#architecture">系统总体结构</a></li>
+          <li><a href="#data">数据结构教学</a></li>
+          <li><a href="#scripts">五个脚本职责</a></li>
+          <li><a href="#process">课堂教学过程</a></li>
+          <li><a href="#inspector">Inspector 配置</a></li>
+          <li><a href="#debug">调试与常见错误</a></li>
+          <li><a href="#practice">分层练习</a></li>
+          <li><a href="#assessment">评价标准</a></li>
+          <li><a href="#board">板书设计</a></li>
+        </ol>
+      </nav>
+
+      <main>
+        <section id="analysis">
+          <h2><span class="num">01</span>学情与项目分析</h2>
+
+          <h3>学生已有基础</h3>
+          <ul>
+            <li>会在 Hierarchy 中创建和查找 GameObject。</li>
+            <li>知道 <code>SetActive(true/false)</code> 可以显示或隐藏对象。</li>
+            <li>接触过 <code>MonoBehaviour</code>、<code>Start()</code> 和 UGUI Button。</li>
+            <li>能够在 Inspector 中拖拽引用，但对“数据”和“流程”为什么要分开还不熟悉。</li>
+          </ul>
+
+          <h3>真实项目问题</h3>
+          <p>
+            旧脚本把邮件数据、帖子数据、按钮绑定、页面切换、剧情进度和选择分支全部写进同一个
+            <code>StorySystem</code>。脚本越写越长，修改一个功能时容易影响其他功能。
+          </p>
+
+          <div class="callout">
+            <strong>本课核心问题</strong>
+            如果一个脚本同时负责“记住数据、保存进度、控制邮件、控制论坛、决定下一步”，我们怎样把它拆开，又不使用学生暂时难以理解的高级框架？
+          </div>
+
+          <h3>目标剧情流程</h3>
+          <div class="flow">
+            <div class="flow-step"><b>1. 邮箱</b><small>初始只有邮箱 Icon 可用，玩家阅读当前邮件。</small></div>
+            <div class="flow-step"><b>2. 论坛</b><small>邮件读完后论坛 Icon 解锁，首次显示欢迎页。</small></div>
+            <div class="flow-step"><b>3. 帖子</b><small>帖子按照 1、2、3 的顺序逐个出现。</small></div>
+            <div class="flow-step"><b>4. 下一轮</b><small>最后一帖返回后回到主页面，出现下一封邮件。</small></div>
+          </div>
+        </section>
+
+        <section id="objectives">
+          <h2><span class="num">02</span>教学目标</h2>
+          <div class="grid-3">
+            <div class="goal-card">
+              <h3>知识目标</h3>
+              <ul>
+                <li>理解数据、状态、界面和流程四种职责。</li>
+                <li>理解 <code>[Serializable]</code>、数组和索引的作用。</li>
+                <li>理解 <code>Button.interactable</code> 与 <code>SetActive</code> 的区别。</li>
+              </ul>
+            </div>
+            <div class="goal-card">
+              <h3>能力目标</h3>
+              <ul>
+                <li>能够在 Inspector 中配置一轮邮件和帖子。</li>
+                <li>能够跟踪当前轮次和帖子解锁进度。</li>
+                <li>能够根据现象定位引用为空、索引错误和状态错误。</li>
+              </ul>
+            </div>
+            <div class="goal-card">
+              <h3>素养目标</h3>
+              <ul>
+                <li>形成“一个脚本只做一类事情”的意识。</li>
+                <li>养成先画流程、再写代码、最后测试的习惯。</li>
+                <li>认识可读命名对团队协作的重要性。</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+
+        <section id="focus">
+          <h2><span class="num">03</span>教学重点与难点</h2>
+          <div class="grid-2">
+            <div class="callout success">
+              <strong>教学重点</strong>
+              <ol>
+                <li>用 <code>StoryRoundData</code> 表示“一轮剧情”。</li>
+                <li>用 <code>StoryProgress</code> 保存当前进度。</li>
+                <li>让界面控制器只处理 GameObject 显示和隐藏。</li>
+              </ol>
+            </div>
+            <div class="callout info">
+              <strong>教学难点</strong>
+              <ol>
+                <li>理解“数组索引就是内容顺序”。</li>
+                <li>理解打开旧帖子不能再次推进剧情。</li>
+                <li>理解返回最后一帖时为什么要重置本轮状态。</li>
+              </ol>
+            </div>
+          </div>
+        </section>
+
+        <section id="architecture">
+          <h2><span class="num">04</span>系统总体结构</h2>
+          <p>新系统没有使用 ScriptableObject、事件总线或复杂状态机，只使用普通类、MonoBehaviour、Button 和 GameObject。</p>
+
+          <div class="architecture" aria-label="系统结构图">
+            <div class="column">
+              <div class="arch-box"><b>StoryData</b><br>邮件与帖子引用</div>
+              <div class="arch-box"><b>StoryProgress</b><br>当前轮次与解锁进度</div>
+            </div>
+            <div class="arch-arrow">→</div>
+            <div class="column">
+              <div class="arch-box center"><b>StoryFlowController</b><br>判断下一步做什么</div>
+              <div class="arch-box"><b>MailPanelController</b><br>显示邮件界面</div>
+              <div class="arch-box"><b>ForumPanelController</b><br>显示论坛界面</div>
+            </div>
+          </div>
+
+          <table>
+            <thead><tr><th>层次</th><th>负责的问题</th><th>不负责的问题</th></tr></thead>
+            <tbody>
+              <tr><td>数据</td><td>这一轮有哪些邮件和帖子？</td><td>不决定现在显示哪一个。</td></tr>
+              <tr><td>状态</td><td>玩家现在进行到哪里？</td><td>不直接操作 GameObject。</td></tr>
+              <tr><td>界面</td><td>哪些面板、按钮和图片应该显示？</td><td>不决定是否进入下一轮。</td></tr>
+              <tr><td>流程</td><td>点击发生后，状态和界面怎样配合？</td><td>不保存具体图片内容。</td></tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="data">
+          <h2><span class="num">05</span>数据结构教学</h2>
+
+          <h3>5.1 一封邮件需要什么？</h3>
+          <p>邮件列表中的按钮负责“被点击”，邮件内容 GameObject 负责“被显示”。因此一封邮件只需要两个引用。</p>
+          <pre><code><span class="keyword">[Serializable]</span>
+<span class="keyword">public class</span> <span class="type">MailData</span>
+{
+    <span class="keyword">public</span> Button button;
+    <span class="keyword">public</span> GameObject contentImage;
+
+    <span class="keyword">public bool</span> IsValid =&gt; button != <span class="keyword">null</span>
+        &amp;&amp; contentImage != <span class="keyword">null</span>;
+}</code></pre>
+
+          <div class="callout info">
+            <strong>课堂提问</strong>
+            为什么不能只保存邮件内容图片？因为程序还需要知道玩家点击的是哪个邮件按钮。
+          </div>
+
+          <h3>5.2 一个帖子与邮件结构相同</h3>
+          <pre><code><span class="keyword">[Serializable]</span>
+<span class="keyword">public class</span> <span class="type">PostData</span>
+{
+    <span class="keyword">public</span> Button button;
+    <span class="keyword">public</span> GameObject contentImage;
+}</code></pre>
+
+          <h3>5.3 一轮剧情 = 一封邮件 + 若干帖子</h3>
+          <pre><code><span class="keyword">[Serializable]</span>
+<span class="keyword">public class</span> <span class="type">StoryRoundData</span>
+{
+    <span class="keyword">public</span> MailData mail;
+    <span class="keyword">public</span> PostData[] posts;
+}</code></pre>
+
+          <table>
+            <thead><tr><th>数组索引</th><th>代表的内容</th><th>什么时候出现</th></tr></thead>
+            <tbody>
+              <tr><td><code>posts[0]</code></td><td>第一个帖子</td><td>读完邮件后</td></tr>
+              <tr><td><code>posts[1]</code></td><td>第二个帖子</td><td>从第一个帖子返回后</td></tr>
+              <tr><td><code>posts[2]</code></td><td>第三个帖子</td><td>从第二个帖子返回后</td></tr>
+            </tbody>
+          </table>
+
+          <details>
+            <summary>为什么不用 ScriptableObject？</summary>
+            <div>
+              本项目的内容全部已经放在一个场景中，邮件和帖子都是场景 GameObject。直接在 Inspector 中拖拽引用最直观，也最适合初学者。未来当章节很多、需要跨场景或外部表格配置时，再学习 ScriptableObject。
+            </div>
+          </details>
+        </section>
+
+        <section id="scripts">
+          <h2><span class="num">06</span>五个脚本的职责与读法</h2>
+          <div class="script-grid">
+            <article class="script-card">
+              <span class="role">数据层</span>
+              <h3>StoryData.cs</h3>
+              <p>定义 <code>MailData</code>、<code>PostData</code> 和 <code>StoryRoundData</code>。它只描述“有什么”，不处理点击。</p>
+              <b>阅读关键词：</b> Serializable、Button、GameObject、数组。
+            </article>
+            <article class="script-card">
+              <span class="role">状态层</span>
+              <h3>StoryProgress.cs</h3>
+              <p>记录当前轮次、已解锁帖子、当前打开帖子、邮件是否已读和论坛是否进入过。</p>
+              <b>阅读关键词：</b> int、bool、索引、状态重置。
+            </article>
+            <article class="script-card">
+              <span class="role">邮件界面</span>
+              <h3>MailPanelController.cs</h3>
+              <p>只控制邮件面板、邮件按钮和邮件内容图片的显示隐藏。</p>
+              <b>阅读关键词：</b> ShowPanel、ShowContent、HidePanel。
+            </article>
+            <article class="script-card">
+              <span class="role">论坛界面</span>
+              <h3>ForumPanelController.cs</h3>
+              <p>控制欢迎页、帖子列表、帖子内容和帖子按钮可见性。</p>
+              <b>阅读关键词：</b> unlockedPostIndex、HideAllPostContents。</n+            </article>
+            <article class="script-card" style="grid-column: 1 / -1;">
+              <span class="role">流程协调</span>
+              <h3>StoryFlowController.cs</h3>
+              <p>绑定按钮、询问 StoryProgress 是否允许操作，再通知两个界面控制器显示正确页面。它是“总指挥”，但不亲自处理所有细节。</p>
+              <b>阅读关键词：</b> BindButtons、OpenMail、OpenPost、BackFromPostContent、RefreshView。
+            </article>
+          </div>
+
+          <h3>6.1 状态变量逐项解释</h3>
+          <table>
+            <thead><tr><th>变量</th><th>示例</th><th>含义</th></tr></thead>
+            <tbody>
+              <tr><td><code>CurrentRoundIndex</code></td><td>0</td><td>正在进行第一轮剧情。</td></tr>
+              <tr><td><code>UnlockedPostIndex</code></td><td>1</td><td>第 0、1 号帖子都已经解锁。</td></tr>
+              <tr><td><code>OpenedPostIndex</code></td><td>1</td><td>玩家当前打开的是第二个帖子。</td></tr>
+              <tr><td><code>MailRead</code></td><td>true</td><td>当前轮邮件已经阅读。</td></tr>
+              <tr><td><code>ForumJoined</code></td><td>true</td><td>欢迎页已经看过，后续直接进入帖子列表。</td></tr>
+            </tbody>
+          </table>
+
+          <h3>6.2 最关键的推进判断</h3>
+          <pre><code><span class="keyword">bool</span> openedLatestPost =
+    OpenedPostIndex == UnlockedPostIndex;
+
+<span class="keyword">if</span> (openedLatestPost &amp;&amp; UnlockedPostIndex &lt; postCount - 1)
+{
+    UnlockedPostIndex++;
+}</code></pre>
+          <p>
+            只有打开“目前最新解锁的帖子”并返回，才会让索引加一。重新阅读旧帖子不会推进，避免玩家重复解锁剧情。
+          </p>
+
+          <h3>6.3 按钮绑定中的局部变量</h3>
+          <pre><code><span class="keyword">int</span> capturedPostIndex = postIndex;
+AddClick(round.posts[postIndex]?.button,
+    () =&gt; OpenPost(capturedRoundIndex, capturedPostIndex));</code></pre>
+          <p>
+            每个按钮都要记住自己的轮次和帖子编号。课堂上可以让学生打印编号，观察不同按钮传入的索引。
+          </p>
+        </section>
+
+        <section id="process">
+          <h2><span class="num">07</span>课堂教学过程</h2>
+          <div class="timeline">
+            <article class="lesson-step">
+              <div class="lesson-head"><h3>环节一：情境导入与问题发现</h3><span class="time">10 分钟</span></div>
+              <p><b>教师活动：</b>演示旧 StorySystem，要求学生圈出其中的数据、状态和界面代码。</p>
+              <p><b>学生活动：</b>小组讨论“为什么脚本越来越难修改”。</p>
+              <p><b>形成结论：</b>不是代码行数本身有问题，而是一个脚本承担了太多不同职责。</p>
+            </article>
+
+            <article class="lesson-step">
+              <div class="lesson-head"><h3>环节二：先画剧情流程</h3><span class="time">15 分钟</span></div>
+              <p><b>教师活动：</b>在黑板写出“邮件 → 论坛 → 帖子1 → 帖子2 → 帖子3 → 下一封邮件”。</p>
+              <p><b>学生活动：</b>指出每一步需要记住的数据，例如“当前是第几轮”“目前解锁到第几个帖子”。</p>
+              <p><b>检查问题：</b>如果玩家重新打开帖子1，应该解锁帖子3吗？答案：不应该。</p>
+            </article>
+
+            <article class="lesson-step">
+              <div class="lesson-head"><h3>环节三：建立三层数据结构</h3><span class="time">25 分钟</span></div>
+              <p><b>教师活动：</b>从 MailData 开始，逐步组合出 PostData 和 StoryRoundData。</p>
+              <p><b>学生活动：</b>在纸上画包含关系，再在 Inspector 中观察嵌套数组。</p>
+              <p><b>即时评价：</b>学生能用一句话解释“为什么 posts 使用数组”。</p>
+            </article>
+
+            <article class="lesson-step">
+              <div class="lesson-head"><h3>环节四：实现 StoryProgress</h3><span class="time">25 分钟</span></div>
+              <p><b>教师活动：</b>用具体数值演示索引变化：-1 → 0 → 1 → 2。</p>
+              <p><b>学生活动：</b>手动模拟打开帖子、返回帖子、切换轮次。</p>
+              <p><b>难点突破：</b><code>-1</code> 表示“还没有任何帖子解锁或打开”。</p>
+            </article>
+
+            <article class="lesson-step">
+              <div class="lesson-head"><h3>环节五：拆分邮件与论坛界面</h3><span class="time">20 分钟</span></div>
+              <p><b>教师活动：</b>演示两个 PanelController 只调用 SetActive，不改变剧情轮次。</p>
+              <p><b>学生活动：</b>分别找出邮件控制器和论坛控制器负责的 GameObject。</p>
+              <p><b>检查问题：</b>界面控制器能否自己决定进入下一轮？答案：不能，由流程控制器决定。</p>
+            </article>
+
+            <article class="lesson-step">
+              <div class="lesson-head"><h3>环节六：流程协调与按钮绑定</h3><span class="time">25 分钟</span></div>
+              <p><b>教师活动：</b>跟踪一次完整点击链：Button → StoryFlow → StoryProgress → PanelController。</p>
+              <p><b>学生活动：</b>给关键方法画调用箭头，并用 Debug.Log 输出当前索引。</p>
+            </article>
+
+            <article class="lesson-step">
+              <div class="lesson-head"><h3>环节七：Inspector 配置与验收</h3><span class="time">15 分钟</span></div>
+              <p><b>教师活动：</b>演示三轮邮件配置，强调第一轮有3帖，后两轮暂为空。</p>
+              <p><b>学生活动：</b>运行场景，按验收清单逐项测试。</p>
+            </article>
+          </div>
+        </section>
+
+        <section id="inspector">
+          <h2><span class="num">08</span>Inspector 配置指南</h2>
+          <h3>8.1 MainPanel 上的组件</h3>
+          <ul class="checklist">
+            <li>挂载 <code>StoryFlowController</code>。</li>
+            <li>挂载 <code>MailPanelController</code>。</li>
+            <li>挂载 <code>ForumPanelController</code>。</li>
+            <li>Mail Button 拖入 <code>MailIconButton</code>。</li>
+            <li>Forum Button 拖入 <code>ForumIconButton</code>。</li>
+            <li>Picture Button 拖入 <code>PictureIconButton</code>，由脚本保持禁用。</li>
+          </ul>
+
+          <h3>8.2 当前三轮数据</h3>
+          <table>
+            <thead><tr><th>Round</th><th>Mail</th><th>Posts</th><th>运行结果</th></tr></thead>
+            <tbody>
+              <tr><td>Element 0</td><td>MailButton_01 + MailContent_01</td><td>PostButton_01～03 及对应内容</td><td>可以完成一整轮。</td></tr>
+              <tr><td>Element 1</td><td>MailButton_02 + MailContent_02</td><td>空数组</td><td>邮件可读，论坛保持禁用。</td></tr>
+              <tr><td>Element 2</td><td>MailButton_03 + MailContent_03</td><td>空数组</td><td>作为第三轮内容插槽。</td></tr>
+            </tbody>
+          </table>
+
+          <div class="callout success">
+            <strong>配置原则</strong>
+            一个 Post 元素必须同时配置 Button 和 Content Image。只配置其中一个时，该轮论坛不会解锁，以免玩家进入后卡住。
+          </div>
+
+          <h3>8.3 添加第二轮帖子</h3>
+          <ol>
+            <li>复制或新建帖子按钮 GameObject，并命名为 <code>PostButton_04</code> 等清晰名称。</li>
+            <li>新建对应帖子内容 GameObject，初始设置为不激活。</li>
+            <li>展开 Story Rounds → Element 1 → Posts。</li>
+            <li>设置数组 Size，并按照剧情顺序拖入 Button 与 Content Image。</li>
+            <li>运行后重新阅读第二封邮件，论坛 Icon 才会可点击。</li>
+          </ol>
+        </section>
+
+        <section id="debug">
+          <h2><span class="num">09</span>调试方法与常见错误</h2>
+          <table>
+            <thead><tr><th>现象</th><th>可能原因</th><th>排查方法</th></tr></thead>
+            <tbody>
+              <tr><td>邮箱 Icon 无法点击</td><td>当前轮邮件 Button 或 Content 未配置</td><td>检查 Story Rounds 当前 Element 的 Mail。</td></tr>
+              <tr><td>读完邮件后论坛仍不可点击</td><td>Posts 为空，或某个 Post 引用不完整</td><td>检查数组 Size、Button、Content Image。</td></tr>
+              <tr><td>多个帖子内容同时出现</td><td>打开前没有隐藏其他内容</td><td>确认调用了 HideAllPostContents。</td></tr>
+              <tr><td>重新阅读邮件后帖子进度丢失</td><td>每次读邮件都把索引重设为0</td><td>只在 UnlockedPostIndex 小于0时设置为0。</td></tr>
+              <tr><td>点击旧帖子也会解锁新帖</td><td>没有判断是否打开最新帖子</td><td>比较 OpenedPostIndex 与 UnlockedPostIndex。</td></tr>
+              <tr><td>第二轮进入论坛后是空白</td><td>第二轮没有配置帖子</td><td>本项目默认保持论坛禁用，不自动跳过。</td></tr>
+            </tbody>
+          </table>
+
+          <h3>推荐调试输出</h3>
+          <pre><code>Debug.Log(<span class="string">$"Round={progress.CurrentRoundIndex}, "</span>
+    + <span class="string">$"UnlockedPost={progress.UnlockedPostIndex}, "</span>
+    + <span class="string">$"MailRead={progress.MailRead}"</span>);</code></pre>
+
+          <details>
+            <summary>学生调试三问</summary>
+            <div>
+              <ol>
+                <li><b>数据有吗？</b> Inspector 引用是否为空？</li>
+                <li><b>状态对吗？</b> 当前轮次和索引是否符合预期？</li>
+                <li><b>界面刷新了吗？</b> 改完状态后是否调用 RefreshView？</li>
+              </ol>
+            </div>
+          </details>
+        </section>
+
+        <section id="practice">
+          <h2><span class="num">10</span>分层练习与课后任务</h2>
+          <div class="grid-3">
+            <div class="activity" style="background: var(--primary-soft);">
+              <h3>基础任务</h3>
+              <ol>
+                <li>为第二轮添加2个帖子。</li>
+                <li>确认两个帖子逐个解锁。</li>
+                <li>用 Debug.Log 输出索引变化。</li>
+              </ol>
+            </div>
+            <div class="activity" style="background: var(--blue-soft);">
+              <h3>提高任务</h3>
+              <ol>
+                <li>增加“未读邮件”红点 GameObject。</li>
+                <li>读完邮件后隐藏红点。</li>
+                <li>进入下一轮时显示下一封邮件红点。</li>
+              </ol>
+            </div>
+            <div class="activity" style="background: var(--accent-soft);">
+              <h3>挑战任务</h3>
+              <ol>
+                <li>增加剧情完成面板。</li>
+                <li>最后一轮最后一帖返回后显示该面板。</li>
+                <li>不要加入分支系统，保持线性结构。</li>
+              </ol>
+            </div>
+          </div>
+
+          <h3>课堂思考题</h3>
+          <details><summary>1. 为什么轮次切换时不把 ForumJoined 设回 false？</summary><div>因为欢迎页只要求第一次出现。切换轮次只重置当前轮状态，完整 ResetStory 才重置整个游戏状态。</div></details>
+          <details><summary>2. 为什么内容图片使用 GameObject，而不是只使用 Image？</summary><div>当前帖子内容可能是带 Scroll View、文字和多张图片的完整层级。控制根 GameObject 更通用，也仍然符合初学者的 SetActive 思路。</div></details>
+          <details><summary>3. 为什么不能把帖子按钮全部设为 interactable=false，而是直接隐藏未解锁帖子？</summary><div>这是当前产品表现要求：第二、第三个帖子在剧情推进后才“出现”。如果设计要求提前可见但不可点，则可以改用 interactable。</div></details>
+        </section>
+
+        <section id="assessment">
+          <h2><span class="num">11</span>学习评价标准</h2>
+          <table class="rubric">
+            <thead><tr><th>评价维度</th><th>优秀</th><th>达标</th><th>需改进</th><th>分值</th></tr></thead>
+            <tbody>
+              <tr><td>数据配置</td><td>轮次、邮件、帖子顺序全部正确</td><td>主要引用正确，少量命名不规范</td><td>引用缺失或顺序错误</td><td class="score">20</td></tr>
+              <tr><td>流程实现</td><td>完整实现逐帖解锁与轮次切换</td><td>主流程可运行</td><td>存在卡死或越级解锁</td><td class="score">30</td></tr>
+              <tr><td>代码理解</td><td>能解释五个脚本的职责边界</td><td>能说明主要方法作用</td><td>只能模仿，无法解释</td><td class="score">20</td></tr>
+              <tr><td>调试能力</td><td>能用日志和状态定位问题</td><td>能根据提示修复引用问题</td><td>缺少基本排查步骤</td><td class="score">20</td></tr>
+              <tr><td>规范与表达</td><td>命名清晰，演示讲解完整</td><td>基本规范</td><td>命名混乱，缺少说明</td><td class="score">10</td></tr>
+            </tbody>
+          </table>
+
+          <h3>形成性评价记录</h3>
+          <ul class="checklist">
+            <li>能够在不看答案的情况下画出完整流程。</li>
+            <li>能够解释 <code>UnlockedPostIndex = -1</code> 的含义。</li>
+            <li>能够独立添加一轮新邮件和帖子。</li>
+            <li>能够说明为什么重新阅读旧帖子不推进剧情。</li>
+          </ul>
+        </section>
+
+        <section id="board">
+          <h2><span class="num">12</span>板书设计与课堂小结</h2>
+          <div class="board">
+            <pre>一轮剧情 StoryRoundData
+├── MailData
+│   ├── Button
+│   └── Content GameObject
+└── PostData[]
+    ├── Post 0
+    ├── Post 1
+    └── Post 2
+
+数据：有什么？          StoryData
+状态：进行到哪里？      StoryProgress
+界面：显示什么？        Mail / Forum PanelController
+流程：下一步做什么？    StoryFlowController
+
+推进条件：OpenedPostIndex == UnlockedPostIndex</pre>
+          </div>
+
+          <div class="callout success">
+            <strong>课堂小结</strong>
+            好的拆分不是脚本越多越好，而是每个脚本都能用一句简单的话说明职责。本项目最终仍然只依赖学生熟悉的 GameObject、Button、数组和 if 判断。
+          </div>
+
+          <h3>教师课后反思提示</h3>
+          <ul>
+            <li>学生是否真正理解索引，还是只会照着拖 Inspector？</li>
+            <li>是否需要增加一次“故意留空引用”的排错练习？</li>
+            <li>学生是否能区分隐藏 GameObject 与禁用 Button？</li>
+            <li>下一课可衔接：未读红点、剧情完成状态或简单存档。</li>
+          </ul>
+        </section>
+      </main>
+    </div>
+
+    <footer>
+      BBSGame 教学案 · 对应 Unity 6.4 / UGUI 当前故事脚本结构 · 单文件离线 HTML
+    </footer>
+  </div>
+</body>
+</html>
