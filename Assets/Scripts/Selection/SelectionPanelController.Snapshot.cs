@@ -54,7 +54,7 @@ public sealed partial class SelectionPanelController
             || !Mathf.Approximately(committedSnapshotDisplayAspect, targetAspect))
         {
             DestroyTexture(ref committedSnapshotDisplay);
-            committedSnapshotDisplay = CreateLetterboxedTexture(
+            committedSnapshotDisplay = CreateAspectFilledTexture(
                 committedSnapshotSource,
                 targetAspect);
             committedSnapshotDisplayAspect = targetAspect;
@@ -74,6 +74,7 @@ public sealed partial class SelectionPanelController
 
     private void BeginSnapshotSubmission(RectTransform captureRoot)
     {
+        captureRoot = ResolveCaptureRoot(captureRoot);
         if (captureRoot == null)
         {
             ClearCommittedSnapshot();
@@ -84,11 +85,15 @@ public sealed partial class SelectionPanelController
 
         submissionInProgress = true;
         HideEditingUiForSnapshot(
-            activeLayout?.SelectionFrame,
+            ResolveLayoutChild(
+                activeLayout?.SelectionFrame,
+                "SelectionFrame"),
             activeLayout?.ItemRoot != null
                 ? activeLayout.ItemRoot.gameObject
-                : null,
-            activeLayout?.BottomNavigation);
+                : ResolveLayoutChild(null, "ItemRoot"),
+            ResolveLayoutChild(
+                activeLayout?.BottomNavigation,
+                "BottomNavigation"));
         RefreshSubmitButton();
         submissionCoroutine = StartCoroutine(
             CaptureAndFinishSubmission(captureRoot));
@@ -143,10 +148,7 @@ public sealed partial class SelectionPanelController
             ? canvas.worldCamera
             : null;
 
-        Vector3[] worldCorners = new Vector3[4];
-        captureRoot.GetWorldCorners(worldCorners);
-        Vector2 bottomLeft = RectTransformUtility.WorldToScreenPoint(camera, worldCorners[0]);
-        Vector2 topRight = RectTransformUtility.WorldToScreenPoint(camera, worldCorners[2]);
+        Rect screenRect = GetVisibleCaptureScreenRect(captureRoot, camera);
 
         Texture2D screenTexture = ScreenCapture.CaptureScreenshotAsTexture();
         if (screenTexture == null || Screen.width <= 0 || Screen.height <= 0)
@@ -158,19 +160,19 @@ public sealed partial class SelectionPanelController
         float scaleX = (float)screenTexture.width / Screen.width;
         float scaleY = (float)screenTexture.height / Screen.height;
         int xMin = Mathf.Clamp(
-            Mathf.FloorToInt(Mathf.Min(bottomLeft.x, topRight.x) * scaleX),
+            Mathf.FloorToInt(screenRect.xMin * scaleX),
             0,
             screenTexture.width);
         int yMin = Mathf.Clamp(
-            Mathf.FloorToInt(Mathf.Min(bottomLeft.y, topRight.y) * scaleY),
+            Mathf.FloorToInt(screenRect.yMin * scaleY),
             0,
             screenTexture.height);
         int xMax = Mathf.Clamp(
-            Mathf.CeilToInt(Mathf.Max(bottomLeft.x, topRight.x) * scaleX),
+            Mathf.CeilToInt(screenRect.xMax * scaleX),
             0,
             screenTexture.width);
         int yMax = Mathf.Clamp(
-            Mathf.CeilToInt(Mathf.Max(bottomLeft.y, topRight.y) * scaleY),
+            Mathf.CeilToInt(screenRect.yMax * scaleY),
             0,
             screenTexture.height);
 
@@ -194,7 +196,108 @@ public sealed partial class SelectionPanelController
         return cropped;
     }
 
-    private static Texture2D CreateLetterboxedTexture(
+    private RectTransform ResolveCaptureRoot(RectTransform configuredRoot)
+    {
+        if (activeLayout?.LayoutRoot != null)
+        {
+            Transform backgroundPreview = activeLayout.LayoutRoot.transform.Find(
+                "PreviewRoot/BackgroundPreview");
+            if (backgroundPreview is RectTransform backgroundRect)
+            {
+                return backgroundRect;
+            }
+        }
+
+        return configuredRoot;
+    }
+
+    private GameObject ResolveLayoutChild(GameObject configuredObject, string childName)
+    {
+        if (configuredObject != null)
+        {
+            return configuredObject;
+        }
+
+        Transform child = activeLayout?.LayoutRoot != null
+            ? activeLayout.LayoutRoot.transform.Find(childName)
+            : null;
+        return child != null ? child.gameObject : null;
+    }
+
+    private static Rect GetVisibleCaptureScreenRect(
+        RectTransform captureRoot,
+        Camera camera)
+    {
+        Rect rootRect = GetScreenRect(captureRoot, camera);
+        RectTransform visualBounds = FindLargestVisibleGraphicChild(captureRoot);
+        if (visualBounds == null)
+        {
+            return rootRect;
+        }
+
+        Rect visualRect = GetScreenRect(visualBounds, camera);
+        float xMin = Mathf.Max(rootRect.xMin, visualRect.xMin);
+        float yMin = Mathf.Max(rootRect.yMin, visualRect.yMin);
+        float xMax = Mathf.Min(rootRect.xMax, visualRect.xMax);
+        float yMax = Mathf.Min(rootRect.yMax, visualRect.yMax);
+        return xMax > xMin && yMax > yMin
+            ? Rect.MinMaxRect(xMin, yMin, xMax, yMax)
+            : rootRect;
+    }
+
+    private static RectTransform FindLargestVisibleGraphicChild(
+        RectTransform captureRoot)
+    {
+        RectTransform largest = null;
+        float largestArea = 0f;
+        for (int childIndex = 0; childIndex < captureRoot.childCount; childIndex++)
+        {
+            RectTransform child = captureRoot.GetChild(childIndex) as RectTransform;
+            Graphic graphic = child != null ? child.GetComponent<Graphic>() : null;
+            if (child == null
+                || graphic == null
+                || !graphic.enabled
+                || !child.gameObject.activeInHierarchy)
+            {
+                continue;
+            }
+
+            float area = Mathf.Abs(child.rect.width * child.rect.height)
+                * Mathf.Abs(child.lossyScale.x * child.lossyScale.y);
+            if (area > largestArea)
+            {
+                largest = child;
+                largestArea = area;
+            }
+        }
+
+        return largest;
+    }
+
+    private static Rect GetScreenRect(RectTransform rectTransform, Camera camera)
+    {
+        Vector3[] worldCorners = new Vector3[4];
+        rectTransform.GetWorldCorners(worldCorners);
+        Vector2 first = RectTransformUtility.WorldToScreenPoint(camera, worldCorners[0]);
+        float xMin = first.x;
+        float xMax = first.x;
+        float yMin = first.y;
+        float yMax = first.y;
+        for (int cornerIndex = 1; cornerIndex < worldCorners.Length; cornerIndex++)
+        {
+            Vector2 point = RectTransformUtility.WorldToScreenPoint(
+                camera,
+                worldCorners[cornerIndex]);
+            xMin = Mathf.Min(xMin, point.x);
+            xMax = Mathf.Max(xMax, point.x);
+            yMin = Mathf.Min(yMin, point.y);
+            yMax = Mathf.Max(yMax, point.y);
+        }
+
+        return Rect.MinMaxRect(xMin, yMin, xMax, yMax);
+    }
+
+    private static Texture2D CreateAspectFilledTexture(
         Texture2D source,
         float targetAspect)
     {
@@ -204,45 +307,46 @@ public sealed partial class SelectionPanelController
         }
 
         float sourceAspect = (float)source.width / source.height;
-        int outputWidth = source.width;
-        int outputHeight = source.height;
+        int cropWidth = source.width;
+        int cropHeight = source.height;
         if (sourceAspect > targetAspect)
         {
-            outputHeight = Mathf.CeilToInt(outputWidth / targetAspect);
+            cropWidth = Mathf.Clamp(
+                Mathf.RoundToInt(source.height * targetAspect),
+                1,
+                source.width);
         }
         else if (sourceAspect < targetAspect)
         {
-            outputWidth = Mathf.CeilToInt(outputHeight * targetAspect);
+            cropHeight = Mathf.Clamp(
+                Mathf.RoundToInt(source.width / targetAspect),
+                1,
+                source.height);
         }
 
         Color32[] sourcePixels = source.GetPixels32();
-        Color32[] outputPixels = new Color32[outputWidth * outputHeight];
-        Color32 black = new Color32(0, 0, 0, 255);
-        for (int index = 0; index < outputPixels.Length; index++)
+        Color32[] outputPixels = new Color32[cropWidth * cropHeight];
+        int sourceOffsetX = (source.width - cropWidth) / 2;
+        int sourceOffsetY = (source.height - cropHeight) / 2;
+        for (int outputY = 0; outputY < cropHeight; outputY++)
         {
-            outputPixels[index] = black;
-        }
-
-        int offsetX = (outputWidth - source.width) / 2;
-        int offsetY = (outputHeight - source.height) / 2;
-        for (int sourceY = 0; sourceY < source.height; sourceY++)
-        {
-            int sourceIndex = sourceY * source.width;
-            int outputIndex = (sourceY + offsetY) * outputWidth + offsetX;
+            int sourceIndex = (outputY + sourceOffsetY) * source.width
+                + sourceOffsetX;
+            int outputIndex = outputY * cropWidth;
             Array.Copy(
                 sourcePixels,
                 sourceIndex,
                 outputPixels,
                 outputIndex,
-                source.width);
+                cropWidth);
         }
 
         Texture2D output = new Texture2D(
-            outputWidth,
-            outputHeight,
+            cropWidth,
+            cropHeight,
             TextureFormat.RGBA32,
             false);
-        output.name = "SelectionCompositionSnapshotFitted";
+        output.name = "SelectionCompositionSnapshotFilled";
         output.SetPixels32(outputPixels);
         output.Apply(false, false);
         return output;

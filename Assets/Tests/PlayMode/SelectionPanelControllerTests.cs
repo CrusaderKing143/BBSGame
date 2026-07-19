@@ -362,18 +362,18 @@ public class SelectionPanelControllerTests
     }
 
     [UnityTest]
-    public IEnumerator SnapshotFitsRecordImageWithBlackLetterboxAndResetRestoresTarget()
+    public IEnumerator SnapshotFillsRecordImageByCenterCroppingAndResetRestoresTarget()
     {
         TestPanel panel = CreatePanel(backgroundOnly: true);
         RawImage recordImage = CreateRawImage(
             panel.PanelObject.transform,
             "RecordImage");
-        recordImage.rectTransform.sizeDelta = new Vector2(100f, 100f);
+        recordImage.rectTransform.sizeDelta = new Vector2(100f, 50f);
         recordImage.color = Color.black;
 
-        Texture2D source = Track(new Texture2D(4, 2, TextureFormat.RGBA32, false));
+        Texture2D source = Track(new Texture2D(4, 4, TextureFormat.RGBA32, false));
         Color32[] sourcePixels = Enumerable
-            .Repeat(new Color32(255, 0, 0, 255), 8)
+            .Repeat(new Color32(255, 0, 0, 255), 16)
             .ToArray();
         source.SetPixels32(sourcePixels);
         source.Apply();
@@ -383,10 +383,9 @@ public class SelectionPanelControllerTests
         Texture2D fitted = recordImage.texture as Texture2D;
         Assert.That(fitted, Is.Not.Null);
         Assert.That(fitted.width, Is.EqualTo(4));
-        Assert.That(fitted.height, Is.EqualTo(4));
-        Assert.That(fitted.GetPixel(0, 0), Is.EqualTo(Color.black));
-        Assert.That(fitted.GetPixel(0, 1), Is.EqualTo(Color.red));
-        Assert.That(fitted.GetPixel(0, 3), Is.EqualTo(Color.black));
+        Assert.That(fitted.height, Is.EqualTo(2));
+        Assert.That(fitted.GetPixel(0, 0), Is.EqualTo(Color.red));
+        Assert.That(fitted.GetPixel(3, 1), Is.EqualTo(Color.red));
         Assert.That(recordImage.color, Is.EqualTo(Color.white));
 
         panel.Controller.ResetSelections();
