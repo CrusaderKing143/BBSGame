@@ -17,38 +17,87 @@ public sealed class SelectionItemDefinition
     [SerializeField] private string itemId;
     [SerializeField] private Sprite iconSprite;
     [SerializeField] private Sprite previewSprite;
-    [SerializeField] private GameObject previewObject;
+    [SerializeField] private bool unlockedByDefault;
+    [SerializeField] private float initialDisplayScale = 1f;
 
     public string ItemId => itemId;
     public Sprite IconSprite => iconSprite;
     public Sprite PreviewSprite => previewSprite;
-    public GameObject PreviewObject => previewObject;
+    public bool UnlockedByDefault => unlockedByDefault;
+    public float InitialDisplayScale => initialDisplayScale > 0f ? initialDisplayScale : 1f;
 }
 
 [Serializable]
 public sealed class SelectionCategoryDefinition
 {
     [SerializeField] private SelectionCategoryType categoryType;
-    [SerializeField] private Button categoryButton;
     [SerializeField] private SelectionItemDefinition[] items;
 
     public SelectionCategoryType CategoryType => categoryType;
-    public Button CategoryButton => categoryButton;
     public SelectionItemDefinition[] Items => items;
 }
 
-public sealed class SelectionPanelController : MonoBehaviour
+[Serializable]
+public sealed class SelectionBackgroundLayoutDefinition
+{
+    [SerializeField] private GameObject layoutRoot;
+    [SerializeField] private Button backButton;
+    [SerializeField] private Button submitButton;
+    [SerializeField] private Button characterButton;
+    [SerializeField] private Button backgroundButton;
+    [SerializeField] private Button propsButton;
+    [SerializeField] private Transform itemRoot;
+    [SerializeField] private Image characterPreview;
+    [SerializeField] private Image propsPreview;
+    [SerializeField] private RectTransform captureRoot;
+    [SerializeField] private GameObject selectionFrame;
+    [SerializeField] private GameObject bottomNavigation;
+    [SerializeField] private Sprite itemBackgroundSprite;
+
+    public GameObject LayoutRoot => layoutRoot;
+    public Button BackButton => backButton;
+    public Button SubmitButton => submitButton;
+    public Transform ItemRoot => itemRoot;
+    public Image CharacterPreview => characterPreview;
+    public Image PropsPreview => propsPreview;
+    public RectTransform CharacterPlacementRoot => characterPreview?.rectTransform;
+    public RectTransform PropsPlacementRoot => propsPreview?.rectTransform;
+    public RectTransform CaptureRoot => captureRoot;
+    public GameObject SelectionFrame => selectionFrame;
+    public GameObject BottomNavigation => bottomNavigation;
+    public Sprite ItemBackgroundSprite => itemBackgroundSprite;
+
+    public Button GetCategoryButton(SelectionCategoryType categoryType)
+    {
+        switch (categoryType)
+        {
+            case SelectionCategoryType.Character:
+                return characterButton;
+            case SelectionCategoryType.Background:
+                return backgroundButton;
+            case SelectionCategoryType.Props:
+                return propsButton;
+            default:
+                return null;
+        }
+    }
+}
+
+public sealed partial class SelectionPanelController : MonoBehaviour
 {
     private const int CategoryCount = 3;
 
-    [Header("Navigation")]
-    [SerializeField] private Button backButton;
-    [SerializeField] private Button submitButton;
+    private void Start()
+    {
+        OpenPanel();
+    }
 
     [Header("Items")]
-    [SerializeField] private Transform itemRoot;
     [SerializeField] private SelectionItemView itemViewPrefab;
     [SerializeField] private SelectionCategoryDefinition[] categories;
+
+    [Header("Background Layouts")]
+    [SerializeField] private SelectionBackgroundLayoutDefinition[] backgroundLayouts;
 
     [Header("Selection Rules")]
     [SerializeField] private SelectionCategoryType[] requiredCategories =
@@ -59,28 +108,88 @@ public sealed class SelectionPanelController : MonoBehaviour
     };
     [SerializeField] private SelectionCategoryType initialCategory = SelectionCategoryType.Character;
 
-    [Header("Preview Layers")]
-    [SerializeField] private Image characterPreview;
-    [SerializeField] private Image propsPreview;
-
     [Header("Events")]
     [SerializeField] private UnityEvent onSubmitted = new UnityEvent();
 
     private readonly Dictionary<SelectionCategoryType, SelectionCategoryDefinition> categoryLookup =
         new Dictionary<SelectionCategoryType, SelectionCategoryDefinition>();
 
-    private readonly Dictionary<Button, UnityAction> categoryButtonActions =
+    private readonly Dictionary<Button, UnityAction> buttonActions =
         new Dictionary<Button, UnityAction>();
 
     private readonly List<SelectionItemView> itemViews = new List<SelectionItemView>();
+    private readonly List<int> visibleItemIndices = new List<int>();
+    private readonly Dictionary<SelectionCategoryType, HashSet<string>> collectedItemIds =
+        new Dictionary<SelectionCategoryType, HashSet<string>>();
     private readonly HashSet<string> loggedWarnings = new HashSet<string>();
     private readonly int[] committedSelections = { -1, -1, -1 };
     private readonly int[] draftSelections = { -1, -1, -1 };
 
     private SelectionCategoryType currentCategory = SelectionCategoryType.Character;
+    private SelectionBackgroundLayoutDefinition activeLayout;
     private bool configurationValid;
 
     public UnityEvent OnSubmitted => onSubmitted;
+
+    public bool CollectItem(SelectionCategoryType categoryType, string itemId)
+    {
+        RebuildCategoryLookup(false);
+        if (!IsCollectibleCategory(categoryType))
+        {
+            WarnOnce($"Only Character and Props items can be collected. Category: {categoryType}.");
+            return false;
+        }
+
+        if (!TryFindItem(categoryType, itemId, out _, out _))
+        {
+            WarnOnce($"Collectible item '{itemId}' was not found in category {categoryType}.");
+            return false;
+        }
+
+        if (!collectedItemIds.TryGetValue(categoryType, out HashSet<string> itemIds))
+        {
+            itemIds = new HashSet<string>(StringComparer.Ordinal);
+            collectedItemIds.Add(categoryType, itemIds);
+        }
+
+        bool collected = itemIds.Add(itemId);
+        if (collected && gameObject.activeInHierarchy && currentCategory == categoryType)
+        {
+            ShowCategory(currentCategory);
+        }
+
+        return collected;
+    }
+
+    public void ResetCollectedItems()
+    {
+        collectedItemIds.Clear();
+        RebuildCategoryLookup(false);
+        ClampSelections(committedSelections);
+        ClampSelections(draftSelections);
+        PruneUnavailablePlacementComposition();
+
+        if (gameObject.activeInHierarchy)
+        {
+            ApplyAllPreviews();
+            ShowCategory(currentCategory);
+            RefreshSubmitButton();
+        }
+    }
+
+    public bool IsItemCollected(SelectionCategoryType categoryType, string itemId)
+    {
+        return collectedItemIds.TryGetValue(categoryType, out HashSet<string> itemIds)
+            && !string.IsNullOrEmpty(itemId)
+            && itemIds.Contains(itemId);
+    }
+
+    public bool IsItemAvailable(SelectionCategoryType categoryType, string itemId)
+    {
+        RebuildCategoryLookup(false);
+        return TryFindItem(categoryType, itemId, out _, out SelectionItemDefinition item)
+            && IsItemAvailable(categoryType, item);
+    }
 
     public bool IsConfigurationValid()
     {
@@ -93,9 +202,12 @@ public sealed class SelectionPanelController : MonoBehaviour
         gameObject.SetActive(true);
         PrepareRuntime(true);
         CopySelections(committedSelections, draftSelections);
+        CopyCommittedPlacementsToDraft();
+        SelectDefaultBackgroundIfNeeded();
         currentCategory = categoryLookup.ContainsKey(initialCategory)
             ? initialCategory
             : SelectionCategoryType.Character;
+        RestoreSelectedPlacementForCategory(currentCategory);
         ApplyAllPreviews();
         ShowCategory(currentCategory);
         RefreshSubmitButton();
@@ -103,8 +215,14 @@ public sealed class SelectionPanelController : MonoBehaviour
 
     public void CancelAndClose()
     {
+        if (submissionInProgress)
+        {
+            return;
+        }
+
         PrepareRuntime(false);
         CopySelections(committedSelections, draftSelections);
+        RestoreCommittedPlacementsToDraft();
         ApplyAllPreviews();
         gameObject.SetActive(false);
     }
@@ -116,6 +234,11 @@ public sealed class SelectionPanelController : MonoBehaviour
 
     public void Submit()
     {
+        if (submissionInProgress)
+        {
+            return;
+        }
+
         PrepareRuntime(true);
         if (!CanSubmit())
         {
@@ -125,8 +248,8 @@ public sealed class SelectionPanelController : MonoBehaviour
         }
 
         CopySelections(draftSelections, committedSelections);
-        onSubmitted?.Invoke();
-        gameObject.SetActive(false);
+        CommitDraftPlacements();
+        BeginSnapshotSubmission(activeLayout?.CaptureRoot);
     }
 
     public int GetCommittedSelectionIndex(SelectionCategoryType categoryType)
@@ -142,7 +265,8 @@ public sealed class SelectionPanelController : MonoBehaviour
     public string GetCommittedItemId(SelectionCategoryType categoryType)
     {
         int selectedIndex = GetCommittedSelectionIndex(categoryType);
-        if (!TryGetItem(categoryType, selectedIndex, out SelectionItemDefinition item))
+        if (!TryGetItem(categoryType, selectedIndex, out SelectionItemDefinition item)
+            || !IsItemAvailable(categoryType, item))
         {
             return string.Empty;
         }
@@ -152,8 +276,11 @@ public sealed class SelectionPanelController : MonoBehaviour
 
     public void ResetSelections()
     {
+        CancelPendingSubmission();
         FillSelections(committedSelections, -1);
         FillSelections(draftSelections, -1);
+        ResetPlacementComposition();
+        ClearCommittedSnapshot();
         ApplyAllPreviews();
         ShowCategory(currentCategory);
         RefreshSubmitButton();
@@ -161,12 +288,16 @@ public sealed class SelectionPanelController : MonoBehaviour
 
     private void OnDestroy()
     {
+        CancelPendingSubmission();
         UnbindButtons();
 
         foreach (SelectionItemView itemView in itemViews)
         {
             itemView?.Clear();
         }
+
+        ClearPlacedItemViews();
+        ClearCommittedSnapshot();
     }
 
     private void OnValidate()
@@ -182,6 +313,9 @@ public sealed class SelectionPanelController : MonoBehaviour
         configurationValid = RebuildCategoryLookup(logWarnings);
         ClampSelections(committedSelections);
         ClampSelections(draftSelections);
+        PruneInvalidPlacements(committedPlacements);
+        PruneInvalidPlacements(draftPlacements);
+        PreparePlacementLayers();
         BindButtons();
     }
 
@@ -190,12 +324,11 @@ public sealed class SelectionPanelController : MonoBehaviour
         categoryLookup.Clear();
         bool valid = true;
 
-        valid &= RequireReference(backButton, "Back button is not assigned.", logWarnings);
-        valid &= RequireReference(submitButton, "Post button is not assigned.", logWarnings);
-        valid &= RequireReference(itemRoot, "Item root is not assigned.", logWarnings);
         valid &= RequireReference(itemViewPrefab, "Item view prefab is not assigned.", logWarnings);
-        valid &= RequireReference(characterPreview, "Character preview Image is not assigned.", logWarnings);
-        valid &= RequireReference(propsPreview, "Props preview Image is not assigned.", logWarnings);
+        valid &= RequireReference(
+            placedItemViewPrefab,
+            "Placed item view prefab is not assigned.",
+            logWarnings);
 
         if (!IsKnownCategory(initialCategory))
         {
@@ -227,7 +360,6 @@ public sealed class SelectionPanelController : MonoBehaviour
             return false;
         }
 
-        HashSet<Button> categoryButtons = new HashSet<Button>();
         foreach (SelectionCategoryDefinition category in categories)
         {
             if (category == null)
@@ -246,17 +378,6 @@ public sealed class SelectionPanelController : MonoBehaviour
 
             categoryLookup.Add(category.CategoryType, category);
 
-            if (category.CategoryButton == null)
-            {
-                valid = false;
-                WarnIfRequested($"Category {category.CategoryType} has no button.", logWarnings);
-            }
-            else if (!categoryButtons.Add(category.CategoryButton))
-            {
-                valid = false;
-                WarnIfRequested("The same category button is assigned to multiple categories.", logWarnings);
-            }
-
             SelectionItemDefinition[] items = category.Items;
             if (items == null || items.Length == 0)
             {
@@ -265,14 +386,14 @@ public sealed class SelectionPanelController : MonoBehaviour
                 continue;
             }
 
-            if (category.CategoryType == SelectionCategoryType.Background && items.Length != 2)
+            if (category.CategoryType == SelectionCategoryType.Background
+                && (items.Length < 1 || items.Length > 2))
             {
                 valid = false;
-                WarnIfRequested("Background must contain exactly two items.", logWarnings);
+                WarnIfRequested("Background must contain one or two items.", logWarnings);
             }
 
             HashSet<string> itemIds = new HashSet<string>(StringComparer.Ordinal);
-            HashSet<GameObject> previewObjects = new HashSet<GameObject>();
             for (int itemIndex = 0; itemIndex < items.Length; itemIndex++)
             {
                 SelectionItemDefinition item = items[itemIndex];
@@ -300,18 +421,14 @@ public sealed class SelectionPanelController : MonoBehaviour
                     WarnIfRequested($"Category {category.CategoryType} item '{item.ItemId}' has no icon Sprite.", logWarnings);
                 }
 
-                if (category.CategoryType == SelectionCategoryType.Background)
+                if (IsPlacementCategory(category.CategoryType)
+                    && item.PreviewSprite == null
+                    && item.IconSprite == null)
                 {
-                    if (item.PreviewObject == null)
-                    {
-                        valid = false;
-                        WarnIfRequested($"Background item '{item.ItemId}' has no preview object.", logWarnings);
-                    }
-                    else if (!previewObjects.Add(item.PreviewObject))
-                    {
-                        valid = false;
-                        WarnIfRequested("Background items must use different preview objects.", logWarnings);
-                    }
+                    valid = false;
+                    WarnIfRequested(
+                        $"Category {category.CategoryType} item '{item.ItemId}' has no Sprite for placement.",
+                        logWarnings);
                 }
             }
         }
@@ -326,76 +443,249 @@ public sealed class SelectionPanelController : MonoBehaviour
             }
         }
 
+        valid &= ValidateBackgroundLayouts(logWarnings);
+
         return valid;
+    }
+
+    private bool ValidateBackgroundLayouts(bool logWarnings)
+    {
+        if (!categoryLookup.TryGetValue(
+                SelectionCategoryType.Background,
+                out SelectionCategoryDefinition backgroundCategory)
+            || backgroundCategory.Items == null)
+        {
+            return false;
+        }
+
+        int backgroundCount = backgroundCategory.Items.Length;
+        if (backgroundLayouts == null || backgroundLayouts.Length != backgroundCount)
+        {
+            WarnIfRequested(
+                "Background layout count must match the Background item count.",
+                logWarnings);
+            return false;
+        }
+
+        bool valid = true;
+        HashSet<GameObject> layoutRoots = new HashSet<GameObject>();
+        HashSet<Transform> itemRoots = new HashSet<Transform>();
+        HashSet<Button> buttons = new HashSet<Button>();
+        HashSet<Image> placementLayers = new HashSet<Image>();
+
+        for (int layoutIndex = 0; layoutIndex < backgroundLayouts.Length; layoutIndex++)
+        {
+            SelectionBackgroundLayoutDefinition layout = backgroundLayouts[layoutIndex];
+            if (layout == null)
+            {
+                valid = false;
+                WarnIfRequested($"Background layout {layoutIndex} is null.", logWarnings);
+                continue;
+            }
+
+            valid &= ValidateLayoutRoot(layout, layoutIndex, layoutRoots, logWarnings);
+            valid &= ValidateUniqueReference(
+                layout.ItemRoot,
+                itemRoots,
+                $"Background layout {layoutIndex} ItemRoot is missing or duplicated.",
+                logWarnings);
+            valid &= ValidateUniqueReference(
+                layout.CharacterPreview,
+                placementLayers,
+                $"Background layout {layoutIndex} Character preview is not assigned.",
+                logWarnings);
+            valid &= ValidateUniqueReference(
+                layout.PropsPreview,
+                placementLayers,
+                $"Background layout {layoutIndex} Props preview is not assigned.",
+                logWarnings);
+            valid &= ValidateLayoutButton(
+                layout.BackButton,
+                buttons,
+                layoutIndex,
+                "Back",
+                logWarnings);
+            valid &= ValidateLayoutButton(
+                layout.SubmitButton,
+                buttons,
+                layoutIndex,
+                "Post",
+                logWarnings);
+
+            for (int categoryIndex = 0; categoryIndex < CategoryCount; categoryIndex++)
+            {
+                SelectionCategoryType categoryType = (SelectionCategoryType)categoryIndex;
+                valid &= ValidateLayoutButton(
+                    layout.GetCategoryButton(categoryType),
+                    buttons,
+                    layoutIndex,
+                    categoryType.ToString(),
+                    logWarnings);
+            }
+        }
+
+        return valid;
+    }
+
+    private bool ValidateLayoutRoot(
+        SelectionBackgroundLayoutDefinition layout,
+        int layoutIndex,
+        HashSet<GameObject> layoutRoots,
+        bool logWarnings)
+    {
+        GameObject layoutRoot = layout.LayoutRoot;
+        if (layoutRoot == null || !layoutRoots.Add(layoutRoot))
+        {
+            WarnIfRequested(
+                $"Background layout {layoutIndex} root is missing or duplicated.",
+                logWarnings);
+            return false;
+        }
+
+        if (layoutRoot.transform.parent != transform)
+        {
+            WarnIfRequested(
+                $"Background layout {layoutIndex} root must be a direct child of {name}.",
+                logWarnings);
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool ValidateLayoutButton(
+        Button button,
+        HashSet<Button> buttons,
+        int layoutIndex,
+        string buttonName,
+        bool logWarnings)
+    {
+        return ValidateUniqueReference(
+            button,
+            buttons,
+            $"Background layout {layoutIndex} {buttonName} button is missing or duplicated.",
+            logWarnings);
+    }
+
+    private bool ValidateUniqueReference<T>(
+        T value,
+        HashSet<T> values,
+        string warning,
+        bool logWarnings)
+        where T : UnityEngine.Object
+    {
+        if (value != null && values.Add(value))
+        {
+            return true;
+        }
+
+        WarnIfRequested(warning, logWarnings);
+        return false;
     }
 
     private void BindButtons()
     {
         UnbindButtons();
 
-        backButton?.onClick.AddListener(CancelAndClose);
-        submitButton?.onClick.AddListener(Submit);
-
-        foreach (KeyValuePair<SelectionCategoryType, SelectionCategoryDefinition> pair in categoryLookup)
+        if (backgroundLayouts == null)
         {
-            Button button = pair.Value.CategoryButton;
-            if (button == null || categoryButtonActions.ContainsKey(button))
+            return;
+        }
+
+        foreach (SelectionBackgroundLayoutDefinition layout in backgroundLayouts)
+        {
+            if (layout == null)
             {
                 continue;
             }
 
-            SelectionCategoryType capturedCategory = pair.Key;
-            UnityAction action = () => ShowCategory(capturedCategory);
-            categoryButtonActions.Add(button, action);
-            button.onClick.AddListener(action);
+            BindButton(layout.BackButton, CancelAndClose);
+            BindButton(layout.SubmitButton, Submit);
+
+            for (int categoryIndex = 0; categoryIndex < CategoryCount; categoryIndex++)
+            {
+                SelectionCategoryType capturedCategory = (SelectionCategoryType)categoryIndex;
+                BindButton(
+                    layout.GetCategoryButton(capturedCategory),
+                    () => ShowCategory(capturedCategory));
+            }
         }
+    }
+
+    private void BindButton(Button button, UnityAction action)
+    {
+        if (button == null || action == null || buttonActions.ContainsKey(button))
+        {
+            return;
+        }
+
+        buttonActions.Add(button, action);
+        button.onClick.AddListener(action);
     }
 
     private void UnbindButtons()
     {
-        backButton?.onClick.RemoveListener(CancelAndClose);
-        submitButton?.onClick.RemoveListener(Submit);
-
-        foreach (KeyValuePair<Button, UnityAction> pair in categoryButtonActions)
+        foreach (KeyValuePair<Button, UnityAction> pair in buttonActions)
         {
             pair.Key?.onClick.RemoveListener(pair.Value);
         }
 
-        categoryButtonActions.Clear();
+        buttonActions.Clear();
     }
 
     private void ShowCategory(SelectionCategoryType categoryType)
     {
+        if (submissionInProgress)
+        {
+            return;
+        }
+
         currentCategory = categoryType;
         UpdateCategoryButtons();
 
         if (!categoryLookup.TryGetValue(categoryType, out SelectionCategoryDefinition category)
             || category.Items == null
             || itemViewPrefab == null
-            || itemRoot == null)
+            || activeLayout?.ItemRoot == null)
         {
             HideAllItemViews();
             RefreshSubmitButton();
             return;
         }
 
-        EnsureItemViewCapacity(category.Items.Length);
+        MoveItemViewsToActiveRoot();
+        visibleItemIndices.Clear();
+        for (int itemIndex = 0; itemIndex < category.Items.Length; itemIndex++)
+        {
+            SelectionItemDefinition item = category.Items[itemIndex];
+            if (item != null && IsItemAvailable(categoryType, item))
+            {
+                visibleItemIndices.Add(itemIndex);
+            }
+        }
+
+        EnsureItemViewCapacity(visibleItemIndices.Count);
         int selectedIndex = draftSelections[ToIndex(categoryType)];
 
-        for (int itemIndex = 0; itemIndex < itemViews.Count; itemIndex++)
+        for (int viewIndex = 0; viewIndex < itemViews.Count; viewIndex++)
         {
-            SelectionItemView itemView = itemViews[itemIndex];
-            if (itemIndex >= category.Items.Length)
+            SelectionItemView itemView = itemViews[viewIndex];
+            if (viewIndex >= visibleItemIndices.Count)
             {
                 itemView.Clear();
                 continue;
             }
 
+            int itemIndex = visibleItemIndices[viewIndex];
             int capturedIndex = itemIndex;
             SelectionItemDefinition item = category.Items[itemIndex];
+            bool selected = categoryType == SelectionCategoryType.Background
+                ? itemIndex == selectedIndex
+                : IsSelectedPlacement(categoryType, item?.ItemId);
             itemView.Configure(
                 item != null ? item.IconSprite : null,
-                itemIndex == selectedIndex,
+                activeLayout.ItemBackgroundSprite,
+                selected,
                 () => SelectItem(categoryType, capturedIndex));
         }
 
@@ -404,23 +694,30 @@ public sealed class SelectionPanelController : MonoBehaviour
 
     private void SelectItem(SelectionCategoryType categoryType, int itemIndex)
     {
-        if (!TryGetItem(categoryType, itemIndex, out _))
+        if (submissionInProgress)
         {
             return;
         }
 
-        draftSelections[ToIndex(categoryType)] = itemIndex;
-        ApplyPreview(categoryType);
-
-        if (categoryType == currentCategory)
+        if (!TryGetItem(categoryType, itemIndex, out SelectionItemDefinition item)
+            || !IsItemAvailable(categoryType, item))
         {
-            for (int viewIndex = 0; viewIndex < itemViews.Count; viewIndex++)
-            {
-                if (itemViews[viewIndex] != null && itemViews[viewIndex].gameObject.activeSelf)
-                {
-                    itemViews[viewIndex].SetSelected(viewIndex == itemIndex);
-                }
-            }
+            return;
+        }
+
+        if (IsPlacementCategory(categoryType))
+        {
+            PlaceOrSelectItem(categoryType, itemIndex, item);
+            return;
+        }
+
+        draftSelections[ToIndex(categoryType)] = itemIndex;
+
+        if (categoryType == SelectionCategoryType.Background)
+        {
+            ApplyAllPreviews();
+            ShowCategory(currentCategory);
+            return;
         }
 
         RefreshSubmitButton();
@@ -430,9 +727,25 @@ public sealed class SelectionPanelController : MonoBehaviour
     {
         while (itemViews.Count < requiredCount)
         {
-            SelectionItemView itemView = Instantiate(itemViewPrefab, itemRoot);
+            SelectionItemView itemView = Instantiate(itemViewPrefab, activeLayout.ItemRoot);
             itemView.name = $"SelectionItem_{itemViews.Count:00}";
             itemViews.Add(itemView);
+        }
+    }
+
+    private void MoveItemViewsToActiveRoot()
+    {
+        if (activeLayout?.ItemRoot == null)
+        {
+            return;
+        }
+
+        foreach (SelectionItemView itemView in itemViews)
+        {
+            if (itemView != null && itemView.transform.parent != activeLayout.ItemRoot)
+            {
+                itemView.transform.SetParent(activeLayout.ItemRoot, false);
+            }
         }
     }
 
@@ -446,11 +759,26 @@ public sealed class SelectionPanelController : MonoBehaviour
 
     private void UpdateCategoryButtons()
     {
-        foreach (KeyValuePair<SelectionCategoryType, SelectionCategoryDefinition> pair in categoryLookup)
+        if (backgroundLayouts == null)
         {
-            if (pair.Value.CategoryButton != null)
+            return;
+        }
+
+        foreach (SelectionBackgroundLayoutDefinition layout in backgroundLayouts)
+        {
+            if (layout == null)
             {
-                pair.Value.CategoryButton.interactable = pair.Key != currentCategory;
+                continue;
+            }
+
+            for (int categoryIndex = 0; categoryIndex < CategoryCount; categoryIndex++)
+            {
+                SelectionCategoryType categoryType = (SelectionCategoryType)categoryIndex;
+                Button button = layout.GetCategoryButton(categoryType);
+                if (button != null)
+                {
+                    button.interactable = categoryType != currentCategory;
+                }
             }
         }
     }
@@ -458,76 +786,80 @@ public sealed class SelectionPanelController : MonoBehaviour
     private void ApplyAllPreviews()
     {
         ApplyPreview(SelectionCategoryType.Background);
-        ApplyPreview(SelectionCategoryType.Character);
-        ApplyPreview(SelectionCategoryType.Props);
+        PreparePlacementLayers();
+        RebuildPlacementViews();
     }
 
     private void ApplyPreview(SelectionCategoryType categoryType)
     {
         if (categoryType == SelectionCategoryType.Background)
         {
-            ApplyBackgroundPreview();
+            ActivateSelectedBackgroundLayout();
             return;
         }
 
-        Image target = GetPreviewTarget(categoryType);
-        int selectedIndex = draftSelections[ToIndex(categoryType)];
-        Sprite sprite = null;
-
-        if (TryGetItem(categoryType, selectedIndex, out SelectionItemDefinition item))
-        {
-            sprite = item.PreviewSprite != null ? item.PreviewSprite : item.IconSprite;
-        }
-
-        if (target == null)
-        {
-            return;
-        }
-
-        target.sprite = sprite;
-        target.enabled = sprite != null;
-        target.preserveAspect = true;
+        RebuildPlacementViews();
     }
 
-    private void ApplyBackgroundPreview()
+    private void ActivateSelectedBackgroundLayout()
     {
-        if (!categoryLookup.TryGetValue(
-                SelectionCategoryType.Background,
-                out SelectionCategoryDefinition category)
-            || category.Items == null)
+        activeLayout = null;
+        if (backgroundLayouts == null)
         {
             return;
         }
 
         int selectedIndex = draftSelections[ToIndex(SelectionCategoryType.Background)];
-        for (int itemIndex = 0; itemIndex < category.Items.Length; itemIndex++)
+        bool hasValidSelection = TryGetItem(
+            SelectionCategoryType.Background,
+            selectedIndex,
+            out _);
+
+        for (int layoutIndex = 0; layoutIndex < backgroundLayouts.Length; layoutIndex++)
         {
-            SelectionItemDefinition item = category.Items[itemIndex];
-            if (item?.PreviewObject != null)
+            SelectionBackgroundLayoutDefinition layout = backgroundLayouts[layoutIndex];
+            bool selected = hasValidSelection && layoutIndex == selectedIndex;
+            if (layout?.LayoutRoot != null)
             {
-                item.PreviewObject.SetActive(itemIndex == selectedIndex);
+                layout.LayoutRoot.SetActive(selected);
+            }
+
+            if (selected)
+            {
+                activeLayout = layout;
             }
         }
+
+        MoveItemViewsToActiveRoot();
     }
 
-    private Image GetPreviewTarget(SelectionCategoryType categoryType)
+    private void SelectDefaultBackgroundIfNeeded()
     {
-        switch (categoryType)
+        int backgroundIndex = ToIndex(SelectionCategoryType.Background);
+        if (!TryGetItem(
+                SelectionCategoryType.Background,
+                draftSelections[backgroundIndex],
+                out _)
+            && TryGetItem(SelectionCategoryType.Background, 0, out _))
         {
-            case SelectionCategoryType.Character:
-                return characterPreview;
-            case SelectionCategoryType.Props:
-                return propsPreview;
-            default:
-                return null;
+            draftSelections[backgroundIndex] = 0;
         }
     }
 
     private void RefreshSubmitButton()
     {
-        if (submitButton != null)
+        bool canSubmit = !submissionInProgress && CanSubmit();
+        if (backgroundLayouts == null)
         {
-            submitButton.interactable = CanSubmit();
+            return;
+        }
+
+        foreach (SelectionBackgroundLayoutDefinition layout in backgroundLayouts)
+        {
+            if (layout?.SubmitButton != null)
+            {
+                layout.SubmitButton.interactable = canSubmit;
+            }
         }
     }
 
@@ -545,8 +877,26 @@ public sealed class SelectionPanelController : MonoBehaviour
 
         foreach (SelectionCategoryType categoryType in requiredCategories)
         {
-            if (!IsKnownCategory(categoryType)
-                || !TryGetItem(categoryType, draftSelections[ToIndex(categoryType)], out _))
+            if (!IsKnownCategory(categoryType))
+            {
+                return false;
+            }
+
+            if (IsPlacementCategory(categoryType))
+            {
+                if (!HasValidDraftPlacement(categoryType))
+                {
+                    return false;
+                }
+
+                continue;
+            }
+
+            if (!TryGetItem(
+                    categoryType,
+                    draftSelections[ToIndex(categoryType)],
+                    out SelectionItemDefinition item)
+                || !IsItemAvailable(categoryType, item))
             {
                 return false;
             }
@@ -573,12 +923,77 @@ public sealed class SelectionPanelController : MonoBehaviour
         return item != null;
     }
 
+    private bool TryFindItem(
+        SelectionCategoryType categoryType,
+        string itemId,
+        out int itemIndex,
+        out SelectionItemDefinition item)
+    {
+        itemIndex = -1;
+        item = null;
+        if (string.IsNullOrWhiteSpace(itemId)
+            || !categoryLookup.TryGetValue(
+                categoryType,
+                out SelectionCategoryDefinition category)
+            || category.Items == null)
+        {
+            return false;
+        }
+
+        for (int index = 0; index < category.Items.Length; index++)
+        {
+            SelectionItemDefinition candidate = category.Items[index];
+            if (candidate != null
+                && string.Equals(candidate.ItemId, itemId, StringComparison.Ordinal))
+            {
+                itemIndex = index;
+                item = candidate;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool IsItemAvailable(
+        SelectionCategoryType categoryType,
+        SelectionItemDefinition item)
+    {
+        if (item == null)
+        {
+            return false;
+        }
+
+        if (categoryType == SelectionCategoryType.Background)
+        {
+            return true;
+        }
+
+        if (categoryType == SelectionCategoryType.Character && item.UnlockedByDefault)
+        {
+            return true;
+        }
+
+        return IsCollectibleCategory(categoryType)
+            && IsItemCollected(categoryType, item.ItemId);
+    }
+
+    private static bool IsCollectibleCategory(SelectionCategoryType categoryType)
+    {
+        return categoryType == SelectionCategoryType.Character
+            || categoryType == SelectionCategoryType.Props;
+    }
+
     private void ClampSelections(int[] selections)
     {
         for (int categoryIndex = 0; categoryIndex < CategoryCount; categoryIndex++)
         {
             SelectionCategoryType categoryType = (SelectionCategoryType)categoryIndex;
-            if (!TryGetItem(categoryType, selections[categoryIndex], out _))
+            if (!TryGetItem(
+                    categoryType,
+                    selections[categoryIndex],
+                    out SelectionItemDefinition item)
+                || !IsItemAvailable(categoryType, item))
             {
                 selections[categoryIndex] = -1;
             }
@@ -614,32 +1029,7 @@ public sealed class SelectionPanelController : MonoBehaviour
 
     private void ValidateSerializedConfiguration()
     {
-        if (categories == null || categories.Length != CategoryCount)
-        {
-            Debug.LogWarning(
-                $"[SelectionPanelController] Configure exactly {CategoryCount} categories.",
-                this);
-            return;
-        }
-
-        if (requiredCategories == null || requiredCategories.Length == 0)
-        {
-            Debug.LogWarning(
-                "[SelectionPanelController] Configure at least one required category.",
-                this);
-        }
-
-        foreach (SelectionCategoryDefinition category in categories)
-        {
-            if (category != null
-                && category.CategoryType == SelectionCategoryType.Background
-                && (category.Items == null || category.Items.Length != 2))
-            {
-                Debug.LogWarning(
-                    "[SelectionPanelController] Background must contain exactly two items.",
-                    this);
-            }
-        }
+        RebuildCategoryLookup(true);
     }
 
     private static int ToIndex(SelectionCategoryType categoryType)

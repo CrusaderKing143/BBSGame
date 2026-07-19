@@ -13,10 +13,24 @@ public class MailData
 }
 
 [Serializable]
+public class SelectionCollectibleData
+{
+    public Button button;
+    public SelectionCategoryType categoryType;
+    public string itemId;
+
+    public bool IsValid => button != null
+        && (categoryType == SelectionCategoryType.Character
+            || categoryType == SelectionCategoryType.Props)
+        && !string.IsNullOrWhiteSpace(itemId);
+}
+
+[Serializable]
 public class PostData
 {
     public Button button;
     public GameObject contentImage;
+    public SelectionCollectibleData[] collectibles;
 
     public bool IsValid => button != null && contentImage != null;
 }
@@ -35,13 +49,14 @@ public class SelectionPostData
 {
     public SelectionCategoryType categoryType = SelectionCategoryType.Background;
     public Button button;
+    public RawImage recordImage;
     public SelectionPostBranchData[] branches;
 
     public bool IsValid
     {
         get
         {
-            if (button == null || branches == null || branches.Length == 0)
+            if (branches == null || branches.Length == 0)
             {
                 return false;
             }

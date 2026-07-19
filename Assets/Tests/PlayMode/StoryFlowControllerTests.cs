@@ -9,7 +9,7 @@ using UnityEngine.UI;
 public class StoryFlowControllerTests
 {
     [UnityTest]
-    public IEnumerator FirstRoundSelectionUnlocksMappedResultPostBeforeAdvancing()
+    public IEnumerator SelectionSubmissionOpensMappedResultPostBeforeAdvancing()
     {
         for (int selectedBackgroundIndex = 0; selectedBackgroundIndex < 2; selectedBackgroundIndex++)
         {
@@ -37,6 +37,18 @@ public class StoryFlowControllerTests
 
             StoryRoundData firstRound = CreateRound(root.transform, "01", 3);
             StoryRoundData secondRound = CreateRound(root.transform, "02", 1);
+            Button collectibleButton = CreateButton(
+                firstRound.posts[0].contentImage.transform,
+                "Collect Props");
+            firstRound.posts[0].collectibles = new[]
+            {
+                new SelectionCollectibleData
+                {
+                    button = collectibleButton,
+                    categoryType = SelectionCategoryType.Props,
+                    itemId = "Props-0"
+                }
+            };
             Button resultPostButton = CreateButton(root.transform, "Post Button 04");
             GameObject jiuBaContent = CreateChild(root.transform, "Post Content 04");
             GameObject feijiContent = CreateChild(root.transform, "Post Content 05");
@@ -82,6 +94,10 @@ public class StoryFlowControllerTests
             for (int postIndex = 0; postIndex < firstRound.posts.Length; postIndex++)
             {
                 firstRound.posts[postIndex].button.onClick.Invoke();
+                if (postIndex == 0)
+                {
+                    collectibleButton.onClick.Invoke();
+                }
                 postBack.onClick.Invoke();
             }
 
@@ -91,6 +107,17 @@ public class StoryFlowControllerTests
 
             pictureIcon.onClick.Invoke();
             Assert.That(selectionPanelObject.activeSelf, Is.True);
+            Button propsCategoryButton = selectionPanelObject.transform
+                .Find("jiuBa/Selection Props")
+                .GetComponent<Button>();
+            propsCategoryButton.onClick.Invoke();
+            Assert.That(
+                selectionPanelObject.GetComponentsInChildren<SelectionItemView>(false),
+                Has.Length.EqualTo(1));
+            selectionPanelObject.transform
+                .Find("jiuBa/Selection Background")
+                .GetComponent<Button>()
+                .onClick.Invoke();
             SelectionItemView[] backgroundViews = selectionPanelObject
                 .GetComponentsInChildren<SelectionItemView>(false)
                 .OrderBy(view => view.transform.GetSiblingIndex())
@@ -103,15 +130,17 @@ public class StoryFlowControllerTests
             Assert.That(jiuBaPreview.activeSelf, Is.EqualTo(selectedBackgroundIndex == 0));
             Assert.That(feijiPreview.activeSelf, Is.EqualTo(selectedBackgroundIndex == 1));
 
-            Button selectionSubmit = selectionPanelObject.transform.Find("Selection Post").GetComponent<Button>();
+            string activeLayoutName = selectedBackgroundIndex == 0 ? "jiuBa" : "feiji";
+            Button selectionSubmit = selectionPanelObject.transform
+                .Find($"{activeLayoutName}/Selection Post")
+                .GetComponent<Button>();
             Assert.That(selectionSubmit.interactable, Is.True);
             selectionSubmit.onClick.Invoke();
 
             Assert.That(pictureIcon.interactable, Is.False);
             Assert.That(resultPostButton.gameObject.activeSelf, Is.True);
-            Assert.That(postListPanel.activeSelf, Is.True);
-
-            resultPostButton.onClick.Invoke();
+            Assert.That(postListPanel.activeSelf, Is.False);
+            Assert.That(postContentPanel.activeSelf, Is.True);
             Assert.That(jiuBaContent.activeSelf, Is.EqualTo(selectedBackgroundIndex == 0));
             Assert.That(feijiContent.activeSelf, Is.EqualTo(selectedBackgroundIndex == 1));
             postBack.onClick.Invoke();
@@ -202,17 +231,22 @@ public class StoryFlowControllerTests
         enterForum.onClick.Invoke();
         Assert.That(postListPanel.activeSelf, Is.True);
         Assert.That(firstRound.posts[0].button.gameObject.activeSelf, Is.True);
+        Assert.That(firstRound.posts[0].button.interactable, Is.True);
         Assert.That(firstRound.posts[1].button.gameObject.activeSelf, Is.False);
+        Assert.That(firstRound.posts[1].button.interactable, Is.False);
 
         firstRound.posts[0].button.onClick.Invoke();
         Assert.That(firstRound.posts[0].contentImage.activeSelf, Is.True);
         postBack.onClick.Invoke();
+        Assert.That(firstRound.posts[0].button.gameObject.activeSelf, Is.False);
         Assert.That(firstRound.posts[1].button.gameObject.activeSelf, Is.True);
+        Assert.That(firstRound.posts[1].button.interactable, Is.True);
 
         mailIcon.onClick.Invoke();
         firstRound.mail.button.onClick.Invoke();
         mailBack.onClick.Invoke();
         forumIcon.onClick.Invoke();
+        Assert.That(firstRound.posts[0].button.gameObject.activeSelf, Is.False);
         Assert.That(firstRound.posts[1].button.gameObject.activeSelf, Is.True);
 
         firstRound.posts[1].button.onClick.Invoke();
@@ -233,6 +267,10 @@ public class StoryFlowControllerTests
         forumIcon.onClick.Invoke();
         Assert.That(welcomePanel.activeSelf, Is.False);
         Assert.That(postListPanel.activeSelf, Is.True);
+        Assert.That(firstRound.posts[0].button.gameObject.activeSelf, Is.False);
+        Assert.That(firstRound.posts[1].button.gameObject.activeSelf, Is.False);
+        Assert.That(secondRound.posts[0].button.gameObject.activeSelf, Is.True);
+        Assert.That(secondRound.posts[0].button.interactable, Is.True);
 
         secondRound.posts[0].button.onClick.Invoke();
         postBack.onClick.Invoke();
@@ -280,14 +318,11 @@ public class StoryFlowControllerTests
 
     private static Sprite ConfigureSelectionPanel(Transform panelRoot, SelectionPanelController controller)
     {
-        Button backButton = CreateButton(panelRoot, "Selection Back");
-        Button submitButton = CreateButton(panelRoot, "Selection Post");
-        Button characterButton = CreateButton(panelRoot, "Selection Character");
-        Button backgroundButton = CreateButton(panelRoot, "Selection Background");
-        Button propsButton = CreateButton(panelRoot, "Selection Props");
-        Transform itemRoot = CreateChild(panelRoot, "Selection Item Root").transform;
-        Image characterPreview = CreateImage(panelRoot, "Selection Character Preview");
-        Image propsPreview = CreateImage(panelRoot, "Selection Props Preview");
+        SelectionBackgroundLayoutDefinition[] layouts =
+        {
+            CreateSelectionLayout(panelRoot, "jiuBa"),
+            CreateSelectionLayout(panelRoot, "feiji")
+        };
 
         GameObject prefabObject = new GameObject(
             "Selection Item Prefab",
@@ -305,6 +340,17 @@ public class StoryFlowControllerTests
         selectedMark.SetActive(false);
         prefabObject.SetActive(false);
 
+        GameObject placedPrefabObject = new GameObject(
+            "Selection Placed Item Prefab",
+            typeof(RectTransform),
+            typeof(CanvasRenderer),
+            typeof(Image));
+        placedPrefabObject.transform.SetParent(panelRoot);
+        SelectionPlacedItemView placedItemView =
+            placedPrefabObject.AddComponent<SelectionPlacedItemView>();
+        SetField(placedItemView, "itemImage", placedPrefabObject.GetComponent<Image>());
+        placedPrefabObject.SetActive(false);
+
         Texture2D texture = Texture2D.whiteTexture;
         Sprite sprite = Sprite.Create(
             texture,
@@ -313,33 +359,56 @@ public class StoryFlowControllerTests
 
         SelectionCategoryDefinition[] categories =
         {
-            CreateSelectionCategory(SelectionCategoryType.Character, characterButton, sprite, 1, panelRoot),
-            CreateSelectionCategory(SelectionCategoryType.Background, backgroundButton, sprite, 2, panelRoot),
-            CreateSelectionCategory(SelectionCategoryType.Props, propsButton, sprite, 1, panelRoot)
+            CreateSelectionCategory(SelectionCategoryType.Character, sprite, 1),
+            CreateSelectionCategory(SelectionCategoryType.Background, sprite, 2),
+            CreateSelectionCategory(SelectionCategoryType.Props, sprite, 1)
         };
 
-        SetField(controller, "backButton", backButton);
-        SetField(controller, "submitButton", submitButton);
-        SetField(controller, "itemRoot", itemRoot);
         SetField(controller, "itemViewPrefab", itemView);
+        SetField(controller, "placedItemViewPrefab", placedItemView);
         SetField(controller, "categories", categories);
+        SetField(controller, "backgroundLayouts", layouts);
         SetField(controller, "requiredCategories", new[] { SelectionCategoryType.Background });
         SetField(controller, "initialCategory", SelectionCategoryType.Background);
-        SetField(controller, "characterPreview", characterPreview);
-        SetField(controller, "propsPreview", propsPreview);
         return sprite;
+    }
+
+    private static SelectionBackgroundLayoutDefinition CreateSelectionLayout(
+        Transform panelRoot,
+        string name)
+    {
+        GameObject layoutRoot = CreateChild(panelRoot, name);
+        Button backButton = CreateButton(layoutRoot.transform, "Selection Back");
+        Button submitButton = CreateButton(layoutRoot.transform, "Selection Post");
+        Button characterButton = CreateButton(layoutRoot.transform, "Selection Character");
+        Button backgroundButton = CreateButton(layoutRoot.transform, "Selection Background");
+        Button propsButton = CreateButton(layoutRoot.transform, "Selection Props");
+        Transform itemRoot = CreateChild(layoutRoot.transform, "Selection Item Root").transform;
+        Image characterPreview = CreateImage(layoutRoot.transform, "Selection Character Preview");
+        Image propsPreview = CreateImage(layoutRoot.transform, "Selection Props Preview");
+
+        SelectionBackgroundLayoutDefinition layout =
+            new SelectionBackgroundLayoutDefinition();
+        SetField(layout, "layoutRoot", layoutRoot);
+        SetField(layout, "backButton", backButton);
+        SetField(layout, "submitButton", submitButton);
+        SetField(layout, "characterButton", characterButton);
+        SetField(layout, "backgroundButton", backgroundButton);
+        SetField(layout, "propsButton", propsButton);
+        SetField(layout, "itemRoot", itemRoot);
+        SetField(layout, "characterPreview", characterPreview);
+        SetField(layout, "propsPreview", propsPreview);
+        layoutRoot.SetActive(false);
+        return layout;
     }
 
     private static SelectionCategoryDefinition CreateSelectionCategory(
         SelectionCategoryType categoryType,
-        Button button,
         Sprite sprite,
-        int itemCount,
-        Transform previewParent)
+        int itemCount)
     {
         SelectionCategoryDefinition category = new SelectionCategoryDefinition();
         SetField(category, "categoryType", categoryType);
-        SetField(category, "categoryButton", button);
 
         SelectionItemDefinition[] items = new SelectionItemDefinition[itemCount];
         for (int itemIndex = 0; itemIndex < itemCount; itemIndex++)
@@ -351,13 +420,11 @@ public class StoryFlowControllerTests
             SetField(item, "itemId", itemId);
             SetField(item, "iconSprite", sprite);
             SetField(item, "previewSprite", sprite);
-
-            if (categoryType == SelectionCategoryType.Background)
-            {
-                GameObject previewObject = CreateChild(previewParent, itemId);
-                previewObject.SetActive(false);
-                SetField(item, "previewObject", previewObject);
-            }
+            SetField(
+                item,
+                "unlockedByDefault",
+                categoryType == SelectionCategoryType.Character && itemIndex == 0);
+            SetField(item, "initialDisplayScale", 1f);
 
             items[itemIndex] = item;
         }

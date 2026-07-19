@@ -79,13 +79,24 @@ public class ForumPanelController : MonoBehaviour
             {
                 for (int postIndex = 0; postIndex < posts.Length; postIndex++)
                 {
-                    bool unlocked = roundIndex == currentRoundIndex && postIndex <= unlockedPostIndex;
-                    SetActive(posts[postIndex]?.button?.gameObject, unlocked);
+                    Button button = posts[postIndex]?.button;
+                    bool isCurrentPost = roundIndex == currentRoundIndex
+                        && postIndex == unlockedPostIndex;
+                    SetActive(button?.gameObject, isCurrentPost);
+                    if (button != null)
+                    {
+                        button.interactable = isCurrentPost;
+                    }
                 }
             }
 
             bool resultPostUnlocked = roundIndex == currentRoundIndex && selectionPostUnlocked;
-            SetActive(rounds[roundIndex]?.selectionPost?.button?.gameObject, resultPostUnlocked);
+            Button resultPostButton = rounds[roundIndex]?.selectionPost?.button;
+            SetActive(resultPostButton?.gameObject, resultPostUnlocked);
+            if (resultPostButton != null)
+            {
+                resultPostButton.interactable = resultPostUnlocked;
+            }
         }
     }
 

@@ -5,19 +5,34 @@ using UnityEngine.UI;
 public sealed class SelectionItemView : MonoBehaviour
 {
     [SerializeField] private Button button;
+    [SerializeField] private Image backgroundImage;
     [SerializeField] private Image iconImage;
     [SerializeField] private GameObject selectedMark;
 
     private UnityAction clickAction;
+    private Sprite defaultBackgroundSprite;
+    private bool defaultBackgroundCaptured;
 
     public Button Button => button;
+    public Image BackgroundImage => backgroundImage;
     public Image IconImage => iconImage;
     public bool IsSelected => selectedMark != null && selectedMark.activeSelf;
 
-    public void Configure(Sprite icon, bool selected, UnityAction onClick)
+    public void Configure(
+        Sprite icon,
+        Sprite backgroundSprite,
+        bool selected,
+        UnityAction onClick)
     {
         ResolveReferences();
         RemoveClickAction();
+
+        if (backgroundImage != null)
+        {
+            backgroundImage.sprite = backgroundSprite != null
+                ? backgroundSprite
+                : defaultBackgroundSprite;
+        }
 
         clickAction = onClick;
         if (button != null && clickAction != null)
@@ -71,6 +86,17 @@ public sealed class SelectionItemView : MonoBehaviour
         if (button == null)
         {
             button = GetComponent<Button>();
+        }
+
+        if (backgroundImage == null)
+        {
+            backgroundImage = GetComponent<Image>();
+        }
+
+        if (!defaultBackgroundCaptured && backgroundImage != null)
+        {
+            defaultBackgroundSprite = backgroundImage.sprite;
+            defaultBackgroundCaptured = true;
         }
 
         if (iconImage == null)

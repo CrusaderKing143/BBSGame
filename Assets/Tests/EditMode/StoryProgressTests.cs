@@ -1,7 +1,32 @@
 using NUnit.Framework;
+using UnityEngine;
 
 public class StoryProgressTests
 {
+    [Test]
+    public void SelectionPostDoesNotRequireTitleButton()
+    {
+        GameObject content = new GameObject("Selection Post Content");
+        SelectionPostData selectionPost = new SelectionPostData
+        {
+            button = null,
+            branches = new[]
+            {
+                new SelectionPostBranchData
+                {
+                    itemId = "jiuBa",
+                    contentImage = content
+                }
+            }
+        };
+        StoryRoundData round = new StoryRoundData { selectionPost = selectionPost };
+
+        Assert.That(selectionPost.IsValid, Is.True);
+        Assert.That(round.HasSelectionPost, Is.True);
+
+        Object.DestroyImmediate(content);
+    }
+
     [Test]
     public void ResetStartsAtFirstUnreadRound()
     {

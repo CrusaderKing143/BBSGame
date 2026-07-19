@@ -29,6 +29,7 @@ public class StoryFlowController : MonoBehaviour
     public void ResetStory()
     {
         progress.Reset();
+        selectionPanelController?.ResetCollectedItems();
         selectionPanelController?.ResetSelections();
         selectionPanelController?.CancelAndClose();
         mailPanelController?.HidePanel(rounds);
@@ -160,8 +161,39 @@ public class StoryFlowController : MonoBehaviour
             for (int postIndex = 0; postIndex < round.posts.Length; postIndex++)
             {
                 int capturedPostIndex = postIndex;
-                AddClick(round.posts[postIndex]?.button, () => OpenPost(capturedRoundIndex, capturedPostIndex));
+                PostData post = round.posts[postIndex];
+                AddClick(post?.button, () => OpenPost(capturedRoundIndex, capturedPostIndex));
+                BindCollectibles(post?.collectibles, roundIndex, postIndex);
             }
+        }
+    }
+
+    private void BindCollectibles(
+        SelectionCollectibleData[] collectibles,
+        int roundIndex,
+        int postIndex)
+    {
+        if (collectibles == null)
+        {
+            return;
+        }
+
+        for (int collectibleIndex = 0; collectibleIndex < collectibles.Length; collectibleIndex++)
+        {
+            SelectionCollectibleData collectible = collectibles[collectibleIndex];
+            if (collectible == null || !collectible.IsValid)
+            {
+                Debug.LogWarning(
+                    $"[StoryFlowController] Invalid collectible at round {roundIndex}, post {postIndex}, index {collectibleIndex}.",
+                    this);
+                continue;
+            }
+
+            SelectionCategoryType capturedCategory = collectible.categoryType;
+            string capturedItemId = collectible.itemId;
+            AddClick(
+                collectible.button,
+                () => selectionPanelController?.CollectItem(capturedCategory, capturedItemId));
         }
     }
 
@@ -238,12 +270,17 @@ public class StoryFlowController : MonoBehaviour
         }
 
         string selectedItemId = selectionPanelController.GetCommittedItemId(selectionPost.categoryType);
-        if (selectionPost.GetContent(selectedItemId) == null || !progress.TrySubmitSelection())
+        GameObject contentImage = selectionPost.GetContent(selectedItemId);
+        int roundIndex = progress.CurrentRoundIndex;
+        if (contentImage == null
+            || !progress.TrySubmitSelection()
+            || !progress.TryOpenSelectionPost(roundIndex))
         {
             return;
         }
 
-        ShowPostList();
+        selectionPanelController.ApplyCommittedSnapshot(selectionPost.recordImage);
+        forumPanelController?.ShowSelectionPostContent(rounds, contentImage);
         RefreshView();
     }
 
@@ -267,6 +304,7 @@ public class StoryFlowController : MonoBehaviour
             return;
         }
 
+        selectionPanelController.ApplyCommittedSnapshot(selectionPost.recordImage);
         forumPanelController?.ShowSelectionPostContent(rounds, contentImage);
         RefreshView();
     }
