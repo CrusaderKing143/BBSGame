@@ -3,7 +3,7 @@ using UnityEngine.UI;
 
 public class BallSpinner : MonoBehaviour
 {
-    [SerializeField, Min(0.01f)] private float switchInterval = 0.2f;
+    [SerializeField, Min(0.01f)] private float switchInterval = 0.4f;
     [SerializeField] private Image lightImage;
     [SerializeField] private Image darkImage;
 
