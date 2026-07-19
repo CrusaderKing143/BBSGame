@@ -78,6 +78,7 @@ public class StoryFlowControllerTests
             SetField(flow, "mailPanelController", mailController);
             SetField(flow, "forumPanelController", forumController);
             SetField(flow, "selectionPanelController", selectionPanel);
+            SetField(flow, "collectibleFeedbackDuration", 0.05f);
             SetField(flow, "rounds", rounds);
 
             yield return null;
@@ -97,6 +98,25 @@ public class StoryFlowControllerTests
                 if (postIndex == 0)
                 {
                     collectibleButton.onClick.Invoke();
+                    Transform feedback = collectibleButton.transform.Find("Collectible Feedback");
+                    Assert.That(feedback, Is.Not.Null);
+
+                    Image feedbackImage = feedback.GetComponent<Image>();
+                    RectTransform feedbackRect = feedback.GetComponent<RectTransform>();
+                    Assert.That(feedbackImage.sprite, Is.SameAs(selectionSprite));
+                    Assert.That(feedbackImage.preserveAspect, Is.True);
+                    Assert.That(feedbackImage.raycastTarget, Is.False);
+                    Assert.That(feedbackRect.anchorMin, Is.EqualTo(Vector2.one));
+                    Assert.That(feedbackRect.anchorMax, Is.EqualTo(Vector2.one));
+                    Assert.That(feedbackRect.anchoredPosition, Is.EqualTo(new Vector2(12f, 12f)));
+                    Assert.That(feedbackRect.sizeDelta, Is.EqualTo(new Vector2(96f, 96f)));
+
+                    collectibleButton.onClick.Invoke();
+                    Assert.That(collectibleButton.transform.Cast<Transform>().Count(
+                        child => child.name == "Collectible Feedback"), Is.EqualTo(1));
+
+                    yield return new WaitForSecondsRealtime(0.1f);
+                    Assert.That(collectibleButton.transform.Find("Collectible Feedback"), Is.Null);
                 }
                 postBack.onClick.Invoke();
             }

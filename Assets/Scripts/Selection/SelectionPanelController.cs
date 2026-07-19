@@ -191,6 +191,23 @@ public sealed partial class SelectionPanelController : MonoBehaviour
             && IsItemAvailable(categoryType, item);
     }
 
+    public bool TryGetItemIcon(
+        SelectionCategoryType categoryType,
+        string itemId,
+        out Sprite iconSprite)
+    {
+        iconSprite = null;
+        RebuildCategoryLookup(false);
+        if (!TryFindItem(categoryType, itemId, out _, out SelectionItemDefinition item)
+            || item.IconSprite == null)
+        {
+            return false;
+        }
+
+        iconSprite = item.IconSprite;
+        return true;
+    }
+
     public bool IsConfigurationValid()
     {
         configurationValid = RebuildCategoryLookup(false);

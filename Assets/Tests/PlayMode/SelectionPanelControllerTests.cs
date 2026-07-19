@@ -260,6 +260,11 @@ public class SelectionPanelControllerTests
         Assert.That(panel.Controller.CollectItem(
             SelectionCategoryType.Props,
             "props-3"), Is.True);
+        Assert.That(panel.Controller.TryGetItemIcon(
+            SelectionCategoryType.Props,
+            "props-3",
+            out Sprite collectedIcon), Is.True);
+        Assert.That(collectedIcon, Is.Not.Null);
         Assert.That(panel.Controller.CollectItem(
             SelectionCategoryType.Props,
             "props-3"), Is.False);

@@ -1,8 +1,18 @@
+using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
 public class StoryFlowController : MonoBehaviour
 {
+    private const string CollectibleFeedbackObjectName = "Collectible Feedback";
+
+    private sealed class CollectibleFeedbackRuntime
+    {
+        public GameObject Root;
+        public Coroutine Coroutine;
+    }
+
     [Header("Main Icons")]
     [SerializeField] private Button mailButton;
     [SerializeField] private Button forumButton;
@@ -13,10 +23,17 @@ public class StoryFlowController : MonoBehaviour
     [SerializeField] private ForumPanelController forumPanelController;
     [SerializeField] private SelectionPanelController selectionPanelController;
 
+    [Header("Collectible Feedback")]
+    [SerializeField] private Vector2 collectibleFeedbackSize = new Vector2(96f, 96f);
+    [SerializeField] private Vector2 collectibleFeedbackOffset = new Vector2(12f, 12f);
+    [SerializeField, Min(0.01f)] private float collectibleFeedbackDuration = 1.2f;
+
     [Header("Story Rounds")]
     [SerializeField] private StoryRoundData[] rounds;
 
     private readonly StoryProgress progress = new StoryProgress();
+    private readonly List<CollectibleFeedbackRuntime> activeCollectibleFeedbacks =
+        new List<CollectibleFeedbackRuntime>();
 
     public int CurrentRoundIndex => progress.CurrentRoundIndex;
 
@@ -28,6 +45,7 @@ public class StoryFlowController : MonoBehaviour
 
     public void ResetStory()
     {
+        ClearCollectibleFeedbacks();
         progress.Reset();
         selectionPanelController?.ResetCollectedItems();
         selectionPanelController?.ResetSelections();
@@ -191,14 +209,148 @@ public class StoryFlowController : MonoBehaviour
 
             SelectionCategoryType capturedCategory = collectible.categoryType;
             string capturedItemId = collectible.itemId;
+            Button capturedButton = collectible.button;
             AddClick(
-                collectible.button,
-                () => selectionPanelController?.CollectItem(capturedCategory, capturedItemId));
+                capturedButton,
+                () => CollectItemAndShowFeedback(
+                    capturedButton,
+                    capturedCategory,
+                    capturedItemId));
         }
+    }
+
+    private void CollectItemAndShowFeedback(
+        Button sourceButton,
+        SelectionCategoryType categoryType,
+        string itemId)
+    {
+        if (selectionPanelController == null
+            || !selectionPanelController.CollectItem(categoryType, itemId))
+        {
+            return;
+        }
+
+        if (!selectionPanelController.TryGetItemIcon(categoryType, itemId, out Sprite iconSprite))
+        {
+            Debug.LogWarning(
+                $"[StoryFlowController] Collected item '{itemId}' in category {categoryType} has no IconSprite.",
+                this);
+            return;
+        }
+
+        ShowCollectibleFeedback(sourceButton, iconSprite);
+    }
+
+    private void ShowCollectibleFeedback(Button sourceButton, Sprite iconSprite)
+    {
+        if (sourceButton == null || iconSprite == null)
+        {
+            return;
+        }
+
+        GameObject feedbackObject = new GameObject(
+            CollectibleFeedbackObjectName,
+            typeof(RectTransform),
+            typeof(CanvasRenderer),
+            typeof(Image),
+            typeof(CanvasGroup));
+        feedbackObject.layer = sourceButton.gameObject.layer;
+        feedbackObject.transform.SetParent(sourceButton.transform, false);
+        feedbackObject.transform.SetAsLastSibling();
+
+        RectTransform feedbackRect = feedbackObject.GetComponent<RectTransform>();
+        feedbackRect.anchorMin = Vector2.one;
+        feedbackRect.anchorMax = Vector2.one;
+        feedbackRect.pivot = Vector2.zero;
+        feedbackRect.anchoredPosition = collectibleFeedbackOffset;
+        feedbackRect.sizeDelta = new Vector2(
+            collectibleFeedbackSize.x > 0f ? collectibleFeedbackSize.x : 96f,
+            collectibleFeedbackSize.y > 0f ? collectibleFeedbackSize.y : 96f);
+        feedbackRect.localScale = Vector3.one * 0.75f;
+
+        Image feedbackImage = feedbackObject.GetComponent<Image>();
+        feedbackImage.sprite = iconSprite;
+        feedbackImage.color = Color.white;
+        feedbackImage.preserveAspect = true;
+        feedbackImage.raycastTarget = false;
+
+        CanvasGroup canvasGroup = feedbackObject.GetComponent<CanvasGroup>();
+        canvasGroup.alpha = 1f;
+        canvasGroup.interactable = false;
+        canvasGroup.blocksRaycasts = false;
+
+        CollectibleFeedbackRuntime feedback = new CollectibleFeedbackRuntime
+        {
+            Root = feedbackObject
+        };
+        activeCollectibleFeedbacks.Add(feedback);
+        feedback.Coroutine = StartCoroutine(AnimateCollectibleFeedback(feedback));
+    }
+
+    private IEnumerator AnimateCollectibleFeedback(CollectibleFeedbackRuntime feedback)
+    {
+        float totalDuration = Mathf.Max(0.01f, collectibleFeedbackDuration);
+        float popDuration = Mathf.Min(0.15f, totalDuration * 0.25f);
+        float fadeDuration = Mathf.Min(0.35f, totalDuration * 0.5f);
+        float fadeStart = totalDuration - fadeDuration;
+        float elapsed = 0f;
+
+        while (elapsed < totalDuration && feedback.Root != null)
+        {
+            elapsed += Time.unscaledDeltaTime;
+
+            float popProgress = popDuration > 0f
+                ? Mathf.Clamp01(elapsed / popDuration)
+                : 1f;
+            float scale = Mathf.SmoothStep(0.75f, 1f, popProgress);
+            feedback.Root.transform.localScale = Vector3.one * scale;
+
+            CanvasGroup canvasGroup = feedback.Root.GetComponent<CanvasGroup>();
+            if (canvasGroup != null)
+            {
+                canvasGroup.alpha = elapsed <= fadeStart
+                    ? 1f
+                    : 1f - Mathf.Clamp01((elapsed - fadeStart) / fadeDuration);
+            }
+
+            yield return null;
+        }
+
+        CompleteCollectibleFeedback(feedback);
+    }
+
+    private void CompleteCollectibleFeedback(CollectibleFeedbackRuntime feedback)
+    {
+        activeCollectibleFeedbacks.Remove(feedback);
+        feedback.Coroutine = null;
+        if (feedback.Root != null)
+        {
+            Destroy(feedback.Root);
+        }
+    }
+
+    private void ClearCollectibleFeedbacks()
+    {
+        for (int index = activeCollectibleFeedbacks.Count - 1; index >= 0; index--)
+        {
+            CollectibleFeedbackRuntime feedback = activeCollectibleFeedbacks[index];
+            if (feedback.Coroutine != null)
+            {
+                StopCoroutine(feedback.Coroutine);
+            }
+
+            if (feedback.Root != null)
+            {
+                Destroy(feedback.Root);
+            }
+        }
+
+        activeCollectibleFeedbacks.Clear();
     }
 
     private void OnDestroy()
     {
+        ClearCollectibleFeedbacks();
         selectionPanelController?.OnSubmitted.RemoveListener(HandleSelectionSubmitted);
     }
 
