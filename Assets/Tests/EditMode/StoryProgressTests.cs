@@ -1,5 +1,7 @@
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.UI;
+using UnityEngine.Video;
 
 public class StoryProgressTests
 {
@@ -25,6 +27,80 @@ public class StoryProgressTests
         Assert.That(round.HasSelectionPost, Is.True);
 
         Object.DestroyImmediate(content);
+    }
+
+    [Test]
+    public void SelectionPostUsesTheRecordImageFromTheSelectedBranch()
+    {
+        GameObject fallbackObject = new GameObject("Fallback Record Image", typeof(RawImage));
+        GameObject jiubaObject = new GameObject("Jiuba Record Image", typeof(RawImage));
+        GameObject officeObject = new GameObject("Office Record Image", typeof(RawImage));
+        GameObject jiubaContent = new GameObject("Jiuba Content");
+        GameObject officeContent = new GameObject("Office Content");
+
+        try
+        {
+            RawImage fallback = fallbackObject.GetComponent<RawImage>();
+            RawImage jiuba = jiubaObject.GetComponent<RawImage>();
+            RawImage office = officeObject.GetComponent<RawImage>();
+            SelectionPostData selectionPost = new SelectionPostData
+            {
+                recordImage = fallback,
+                branches = new[]
+                {
+                    new SelectionPostBranchData
+                    {
+                        itemId = "jiuBa",
+                        contentImage = jiubaContent,
+                        recordImage = jiuba
+                    },
+                    new SelectionPostBranchData
+                    {
+                        itemId = "office",
+                        contentImage = officeContent,
+                        recordImage = office
+                    }
+                }
+            };
+
+            Assert.That(selectionPost.GetRecordImage("jiuBa"), Is.SameAs(jiuba));
+            Assert.That(selectionPost.GetRecordImage("office"), Is.SameAs(office));
+            Assert.That(selectionPost.GetRecordImage("missing"), Is.SameAs(fallback));
+        }
+        finally
+        {
+            Object.DestroyImmediate(fallbackObject);
+            Object.DestroyImmediate(jiubaObject);
+            Object.DestroyImmediate(officeObject);
+            Object.DestroyImmediate(jiubaContent);
+            Object.DestroyImmediate(officeContent);
+        }
+    }
+
+    [Test]
+    public void ImmediateEndingBranchIsValidWithoutPostContent()
+    {
+        VideoClip endingClip = Resources.Load<VideoClip>("2");
+        Assert.That(endingClip, Is.Not.Null);
+
+        SelectionPostBranchData branch = new SelectionPostBranchData
+        {
+            itemId = "character-day3-assistant",
+            completionMode = SelectionBranchCompletionMode.PlayEndingImmediately,
+            endingVideoClip = endingClip
+        };
+        SelectionPostData selectionPost = new SelectionPostData
+        {
+            categoryType = SelectionCategoryType.Character,
+            branches = new[] { branch }
+        };
+
+        Assert.That(branch.IsValid, Is.True);
+        Assert.That(selectionPost.IsValid, Is.True);
+        Assert.That(
+            selectionPost.GetBranch("character-day3-assistant"),
+            Is.SameAs(branch));
+        Assert.That(selectionPost.GetContent("character-day3-assistant"), Is.Null);
     }
 
     [Test]
@@ -94,6 +170,42 @@ public class StoryProgressTests
     }
 
     [Test]
+    public void ParallelPostStageRequiresEveryPostBeforeUnlockingNextStage()
+    {
+        PostData[] posts =
+        {
+            new PostData(),
+            new PostData(),
+            new PostData { unlockWithPrevious = true },
+            new PostData()
+        };
+        StoryProgress progress = new StoryProgress();
+        progress.Reset();
+        progress.MarkMailRead(posts);
+
+        Assert.That(progress.IsPostAvailable(0, posts), Is.True);
+        Assert.That(progress.IsPostAvailable(1, posts), Is.False);
+
+        Assert.That(progress.TryOpenPost(0, 0, posts), Is.True);
+        Assert.That(progress.CompleteOpenedPost(posts), Is.False);
+        Assert.That(progress.UnlockedPostIndex, Is.EqualTo(2));
+        Assert.That(progress.IsPostAvailable(1, posts), Is.True);
+        Assert.That(progress.IsPostAvailable(2, posts), Is.True);
+        Assert.That(progress.IsPostAvailable(3, posts), Is.False);
+
+        Assert.That(progress.TryOpenPost(0, 1, posts), Is.True);
+        Assert.That(progress.CompleteOpenedPost(posts), Is.False);
+        Assert.That(progress.IsPostAvailable(1, posts), Is.False);
+        Assert.That(progress.IsPostAvailable(2, posts), Is.True);
+        Assert.That(progress.IsPostAvailable(3, posts), Is.False);
+
+        Assert.That(progress.TryOpenPost(0, 2, posts), Is.True);
+        Assert.That(progress.CompleteOpenedPost(posts), Is.False);
+        Assert.That(progress.IsPostAvailable(2, posts), Is.False);
+        Assert.That(progress.IsPostAvailable(3, posts), Is.True);
+    }
+
+    [Test]
     public void CompletingLastPostReportsRoundCompletion()
     {
         StoryProgress progress = ReadyProgress();
@@ -130,6 +242,20 @@ public class StoryProgressTests
         Assert.That(progress.TryOpenSelectionPost(0), Is.True);
         Assert.That(progress.CompleteOpenedPost(3, true), Is.True);
         Assert.That(progress.Phase, Is.EqualTo(StoryRoundPhase.RoundCompleted));
+    }
+
+    [Test]
+    public void ImmediateSelectionEndingCompletesWithoutOpeningResultPost()
+    {
+        StoryProgress progress = ReadyProgress();
+        Assert.That(progress.TryOpenPost(0, 0, 1), Is.True);
+        Assert.That(progress.CompleteOpenedPost(1, true), Is.False);
+        Assert.That(progress.TrySubmitSelection(), Is.True);
+
+        Assert.That(progress.TryCompleteSelectionImmediately(), Is.True);
+        Assert.That(progress.Phase, Is.EqualTo(StoryRoundPhase.RoundCompleted));
+        Assert.That(progress.SelectionPostOpened, Is.False);
+        Assert.That(progress.TryOpenSelectionPost(0), Is.False);
     }
 
     [Test]

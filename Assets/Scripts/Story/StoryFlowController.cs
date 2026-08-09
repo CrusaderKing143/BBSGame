@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Video;
 
 public class StoryFlowController : MonoBehaviour
 {
@@ -23,6 +24,10 @@ public class StoryFlowController : MonoBehaviour
     [SerializeField] private ForumPanelController forumPanelController;
     [SerializeField] private SelectionPanelController selectionPanelController;
 
+    [Header("Ending")]
+    [SerializeField] private GameObject endVideoRoot;
+    [SerializeField] private VideoPlayer endVideoPlayer;
+
     [Header("Collectible Feedback")]
     [SerializeField] private Vector2 collectibleFeedbackSize = new Vector2(96f, 96f);
     [SerializeField] private Vector2 collectibleFeedbackOffset = new Vector2(12f, 12f);
@@ -34,8 +39,17 @@ public class StoryFlowController : MonoBehaviour
     private readonly StoryProgress progress = new StoryProgress();
     private readonly List<CollectibleFeedbackRuntime> activeCollectibleFeedbacks =
         new List<CollectibleFeedbackRuntime>();
+    private SelectionPostBranchData openedSelectionBranch;
+    private VideoClip defaultEndingVideoClip;
+    private bool storyEnded;
 
     public int CurrentRoundIndex => progress.CurrentRoundIndex;
+    public bool IsStoryEnded => storyEnded;
+
+    private void Awake()
+    {
+        defaultEndingVideoClip = endVideoPlayer != null ? endVideoPlayer.clip : null;
+    }
 
     private void Start()
     {
@@ -46,7 +60,11 @@ public class StoryFlowController : MonoBehaviour
     public void ResetStory()
     {
         ClearCollectibleFeedbacks();
+        storyEnded = false;
+        openedSelectionBranch = null;
+        StopEndingVideo();
         progress.Reset();
+        selectionPanelController?.ConfigureForRound(progress.CurrentRoundIndex);
         selectionPanelController?.ResetCollectedItems();
         selectionPanelController?.ResetSelections();
         selectionPanelController?.CancelAndClose();
@@ -57,7 +75,7 @@ public class StoryFlowController : MonoBehaviour
 
     public void OpenMailPanel()
     {
-        if (!HasCurrentRound())
+        if (storyEnded || !HasCurrentRound())
         {
             return;
         }
@@ -70,13 +88,18 @@ public class StoryFlowController : MonoBehaviour
 
     public void BackFromMail()
     {
+        if (storyEnded)
+        {
+            return;
+        }
+
         mailPanelController?.HidePanel(rounds);
         RefreshView();
     }
 
     public void OpenForum()
     {
-        if (!CanOpenForum())
+        if (storyEnded || !CanOpenForum())
         {
             return;
         }
@@ -98,20 +121,21 @@ public class StoryFlowController : MonoBehaviour
 
     public void OpenSelectionPanel()
     {
-        if (selectionPanelController == null || !progress.CanOpenSelection)
+        if (storyEnded || selectionPanelController == null || !progress.CanOpenSelection)
         {
             return;
         }
 
         mailPanelController?.HidePanel(rounds);
         forumPanelController?.HideAll(rounds);
+        selectionPanelController.ConfigureForRound(progress.CurrentRoundIndex);
         selectionPanelController.OpenPanel();
         RefreshView();
     }
 
     public void EnterForum()
     {
-        if (!CanOpenForum())
+        if (storyEnded || !CanOpenForum())
         {
             return;
         }
@@ -123,15 +147,31 @@ public class StoryFlowController : MonoBehaviour
 
     public void BackFromPostContent()
     {
-        if (!HasCurrentRound())
+        if (storyEnded || !HasCurrentRound())
         {
             return;
         }
 
         StoryRoundData currentRound = rounds[progress.CurrentRoundIndex];
+        bool closingSelectionPost = progress.SelectionPostOpened;
+        SelectionPostBranchData closingSelectionBranch = openedSelectionBranch;
         bool completedRound = progress.CompleteOpenedPost(
-            currentRound.PostCount,
+            currentRound.posts,
             currentRound.HasSelectionPost);
+        if (closingSelectionPost)
+        {
+            openedSelectionBranch = null;
+        }
+
+        if (completedRound
+            && closingSelectionPost
+            && closingSelectionBranch?.completionMode
+                == SelectionBranchCompletionMode.OpenPostThenEnding)
+        {
+            EndStory(closingSelectionBranch.endingVideoClip);
+            return;
+        }
+
         bool hasNextRound = progress.CurrentRoundIndex < rounds.Length - 1;
 
         if (completedRound && hasNextRound)
@@ -171,6 +211,19 @@ public class StoryFlowController : MonoBehaviour
             AddClick(round?.mail?.button, () => OpenMail(capturedRoundIndex));
             AddClick(round?.selectionPost?.button, () => OpenSelectionPost(capturedRoundIndex));
 
+            if (round?.selectionPost?.branches != null)
+            {
+                for (int branchIndex = 0;
+                     branchIndex < round.selectionPost.branches.Length;
+                     branchIndex++)
+                {
+                    SelectionPostBranchData branch = round.selectionPost.branches[branchIndex];
+                    BindCollectibles(
+                        branch?.collectibles,
+                        $"round {roundIndex}, selection branch {branchIndex}");
+                }
+            }
+
             if (round?.posts == null)
             {
                 continue;
@@ -181,15 +234,16 @@ public class StoryFlowController : MonoBehaviour
                 int capturedPostIndex = postIndex;
                 PostData post = round.posts[postIndex];
                 AddClick(post?.button, () => OpenPost(capturedRoundIndex, capturedPostIndex));
-                BindCollectibles(post?.collectibles, roundIndex, postIndex);
+                BindCollectibles(
+                    post?.collectibles,
+                    $"round {roundIndex}, post {postIndex}");
             }
         }
     }
 
     private void BindCollectibles(
         SelectionCollectibleData[] collectibles,
-        int roundIndex,
-        int postIndex)
+        string context)
     {
         if (collectibles == null)
         {
@@ -202,7 +256,7 @@ public class StoryFlowController : MonoBehaviour
             if (collectible == null || !collectible.IsValid)
             {
                 Debug.LogWarning(
-                    $"[StoryFlowController] Invalid collectible at round {roundIndex}, post {postIndex}, index {collectibleIndex}.",
+                    $"[StoryFlowController] Invalid collectible at {context}, index {collectibleIndex}.",
                     this);
                 continue;
             }
@@ -356,7 +410,8 @@ public class StoryFlowController : MonoBehaviour
 
     private void OpenMail(int roundIndex)
     {
-        if (!HasCurrentRound()
+        if (storyEnded
+            || !HasCurrentRound()
             || roundIndex < 0
             || roundIndex > progress.CurrentRoundIndex
             || roundIndex >= rounds.Length)
@@ -372,7 +427,7 @@ public class StoryFlowController : MonoBehaviour
 
         if (roundIndex == progress.CurrentRoundIndex)
         {
-            progress.MarkMailRead(selectedRound.HasPosts);
+            progress.MarkMailRead(selectedRound.posts);
         }
 
         mailPanelController?.ShowContent(rounds, roundIndex);
@@ -381,7 +436,7 @@ public class StoryFlowController : MonoBehaviour
 
     private void OpenPost(int roundIndex, int postIndex)
     {
-        if (!HasCurrentRound() || roundIndex != progress.CurrentRoundIndex)
+        if (storyEnded || !HasCurrentRound() || roundIndex != progress.CurrentRoundIndex)
         {
             return;
         }
@@ -398,7 +453,7 @@ public class StoryFlowController : MonoBehaviour
             return;
         }
 
-        if (!progress.TryOpenPost(roundIndex, postIndex, currentRound.PostCount))
+        if (!progress.TryOpenPost(roundIndex, postIndex, currentRound.posts))
         {
             return;
         }
@@ -409,7 +464,10 @@ public class StoryFlowController : MonoBehaviour
 
     private void HandleSelectionSubmitted()
     {
-        if (!HasCurrentRound() || selectionPanelController == null || !progress.CanOpenSelection)
+        if (storyEnded
+            || !HasCurrentRound()
+            || selectionPanelController == null
+            || !progress.CanOpenSelection)
         {
             return;
         }
@@ -422,23 +480,42 @@ public class StoryFlowController : MonoBehaviour
         }
 
         string selectedItemId = selectionPanelController.GetCommittedItemId(selectionPost.categoryType);
-        GameObject contentImage = selectionPost.GetContent(selectedItemId);
+        SelectionPostBranchData branch = selectionPost.GetBranch(selectedItemId);
         int roundIndex = progress.CurrentRoundIndex;
-        if (contentImage == null
-            || !progress.TrySubmitSelection()
-            || !progress.TryOpenSelectionPost(roundIndex))
+        if (branch == null || !branch.IsValid || !progress.TrySubmitSelection())
         {
             return;
         }
 
-        selectionPanelController.ApplyCommittedSnapshot(selectionPost.recordImage);
-        forumPanelController?.ShowSelectionPostContent(rounds, contentImage);
+        if (branch.completionMode == SelectionBranchCompletionMode.PlayEndingImmediately)
+        {
+            if (!progress.TryCompleteSelectionImmediately())
+            {
+                Debug.LogWarning(
+                    "[StoryFlowController] Could not complete the immediate Selection ending.",
+                    this);
+                return;
+            }
+
+            EndStory(branch.endingVideoClip);
+            return;
+        }
+
+        if (branch.contentImage == null || !progress.TryOpenSelectionPost(roundIndex))
+        {
+            return;
+        }
+
+        selectionPanelController.ApplyCommittedSnapshot(
+            selectionPost.GetRecordImage(selectedItemId));
+        openedSelectionBranch = branch;
+        forumPanelController?.ShowSelectionPostContent(rounds, branch.contentImage);
         RefreshView();
     }
 
     private void OpenSelectionPost(int roundIndex)
     {
-        if (!HasCurrentRound() || roundIndex != progress.CurrentRoundIndex)
+        if (storyEnded || !HasCurrentRound() || roundIndex != progress.CurrentRoundIndex)
         {
             return;
         }
@@ -450,14 +527,20 @@ public class StoryFlowController : MonoBehaviour
         }
 
         string selectedItemId = selectionPanelController.GetCommittedItemId(selectionPost.categoryType);
-        GameObject contentImage = selectionPost.GetContent(selectedItemId);
-        if (contentImage == null || !progress.TryOpenSelectionPost(roundIndex))
+        SelectionPostBranchData branch = selectionPost.GetBranch(selectedItemId);
+        if (branch == null
+            || !branch.IsValid
+            || branch.completionMode == SelectionBranchCompletionMode.PlayEndingImmediately
+            || branch.contentImage == null
+            || !progress.TryOpenSelectionPost(roundIndex))
         {
             return;
         }
 
-        selectionPanelController.ApplyCommittedSnapshot(selectionPost.recordImage);
-        forumPanelController?.ShowSelectionPostContent(rounds, contentImage);
+        selectionPanelController.ApplyCommittedSnapshot(
+            selectionPost.GetRecordImage(selectedItemId));
+        openedSelectionBranch = branch;
+        forumPanelController?.ShowSelectionPostContent(rounds, branch.contentImage);
         RefreshView();
     }
 
@@ -466,14 +549,23 @@ public class StoryFlowController : MonoBehaviour
         forumPanelController?.ShowPostList(
             rounds,
             progress.CurrentRoundIndex,
-            progress.UnlockedPostIndex,
-            progress.SelectionPostUnlocked);
+            progress);
     }
 
     private void RefreshView()
     {
+        if (storyEnded)
+        {
+            SetMainButtonsInteractable(false);
+            return;
+        }
+
         bool hasCurrentRound = HasCurrentRound();
         StoryRoundData currentRound = hasCurrentRound ? rounds[progress.CurrentRoundIndex] : null;
+        if (hasCurrentRound)
+        {
+            selectionPanelController?.ConfigureForRound(progress.CurrentRoundIndex);
+        }
 
         if (mailButton != null)
         {
@@ -497,13 +589,13 @@ public class StoryFlowController : MonoBehaviour
         forumPanelController?.RefreshPostButtons(
             rounds,
             progress.CurrentRoundIndex,
-            progress.UnlockedPostIndex,
-            progress.SelectionPostUnlocked);
+            progress);
     }
 
     private bool CanOpenForum()
     {
-        return HasCurrentRound()
+        return !storyEnded
+            && HasCurrentRound()
             && progress.MailRead
             && rounds[progress.CurrentRoundIndex].HasPosts;
     }
@@ -514,6 +606,79 @@ public class StoryFlowController : MonoBehaviour
             && progress.CurrentRoundIndex >= 0
             && progress.CurrentRoundIndex < rounds.Length
             && rounds[progress.CurrentRoundIndex] != null;
+    }
+
+    private void EndStory(VideoClip endingVideoClip)
+    {
+        storyEnded = true;
+        ClearCollectibleFeedbacks();
+        selectionPanelController?.CancelAndClose();
+        mailPanelController?.HidePanel(rounds);
+        forumPanelController?.HideAll(rounds);
+        SetMainButtonsInteractable(false);
+
+        if (endVideoRoot != null)
+        {
+            endVideoRoot.SetActive(true);
+            endVideoRoot.transform.SetAsLastSibling();
+        }
+        else
+        {
+            Debug.LogWarning(
+                "[StoryFlowController] An ending was reached, but EndVideo Root is not configured.",
+                this);
+        }
+
+        if (endVideoPlayer != null)
+        {
+            endVideoPlayer.Stop();
+            if (endingVideoClip != null)
+            {
+                endVideoPlayer.clip = endingVideoClip;
+            }
+            endVideoPlayer.Play();
+        }
+        else
+        {
+            Debug.LogWarning(
+                "[StoryFlowController] An ending was reached, but EndVideo Player is not configured.",
+                this);
+        }
+    }
+
+    private void StopEndingVideo()
+    {
+        if (endVideoPlayer != null)
+        {
+            endVideoPlayer.Stop();
+            if (defaultEndingVideoClip != null)
+            {
+                endVideoPlayer.clip = defaultEndingVideoClip;
+            }
+        }
+
+        if (endVideoRoot != null)
+        {
+            endVideoRoot.SetActive(false);
+        }
+    }
+
+    private void SetMainButtonsInteractable(bool interactable)
+    {
+        if (mailButton != null)
+        {
+            mailButton.interactable = interactable;
+        }
+
+        if (forumButton != null)
+        {
+            forumButton.interactable = interactable;
+        }
+
+        if (pictureButton != null)
+        {
+            pictureButton.interactable = interactable;
+        }
     }
 
     private static void AddClick(Button button, UnityEngine.Events.UnityAction action)

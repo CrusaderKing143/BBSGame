@@ -287,6 +287,12 @@ public sealed partial class SelectionPanelController
             item.ItemId);
         if (placement == null)
         {
+            if (categoryType == SelectionCategoryType.Character
+                && activeRoundBackground?.SingleCharacterPlacement == true)
+            {
+                RemoveDraftPlacementsForCategory(SelectionCategoryType.Character);
+            }
+
             placement = new SelectionPlacedItemData(
                 categoryType,
                 item.ItemId,
@@ -304,6 +310,27 @@ public sealed partial class SelectionPanelController
         RefreshPlacementSelectionMarks();
         RefreshSubmitButton();
         return true;
+    }
+
+    private void RemoveDraftPlacementsForCategory(SelectionCategoryType categoryType)
+    {
+        for (int index = draftPlacements.Count - 1; index >= 0; index--)
+        {
+            SelectionPlacedItemData placement = draftPlacements[index];
+            if (placement == null || placement.CategoryType != categoryType)
+            {
+                continue;
+            }
+
+            RemovePlacedItemView(placement.CategoryType, placement.ItemId);
+            draftPlacements.RemoveAt(index);
+        }
+
+        draftSelections[ToIndex(categoryType)] = -1;
+        if (selectedPlacementCategory == categoryType)
+        {
+            ClearSelectedPlacement();
+        }
     }
 
     private void CopyCommittedPlacementsToDraft()
@@ -335,12 +362,13 @@ public sealed partial class SelectionPanelController
 
     private void PreparePlacementLayers()
     {
-        if (backgroundLayouts == null)
+        SelectionBackgroundLayoutDefinition[] layouts = CurrentBackgroundLayouts;
+        if (layouts == null)
         {
             return;
         }
 
-        foreach (SelectionBackgroundLayoutDefinition layout in backgroundLayouts)
+        foreach (SelectionBackgroundLayoutDefinition layout in layouts)
         {
             DisablePreviewImage(layout?.CharacterPreview);
             DisablePreviewImage(layout?.PropsPreview);

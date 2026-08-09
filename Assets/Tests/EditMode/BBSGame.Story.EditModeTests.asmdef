@@ -2,6 +2,7 @@
   "name": "BBSGame.Story.EditModeTests",
   "rootNamespace": "",
   "references": [
+    "BBSGame.Selection",
     "BBSGame.Story",
     "UnityEngine.UI"
   ],

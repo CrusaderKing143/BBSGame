@@ -2,6 +2,14 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
+using UnityEngine.Video;
+
+public enum SelectionBranchCompletionMode
+{
+    OpenPost = 0,
+    OpenPostThenEnding = 1,
+    PlayEndingImmediately = 2
+}
 
 [Serializable]
 public class MailData
@@ -29,8 +37,12 @@ public class SelectionCollectibleData
 public class PostData
 {
     public Button button;
+    [Tooltip("Optional shared list root used when multiple post buttons appear on one forum image.")]
+    public GameObject listDisplayRoot;
     public GameObject contentImage;
     public SelectionCollectibleData[] collectibles;
+    [Tooltip("Show this post in the same unlock stage as the previous post.")]
+    public bool unlockWithPrevious;
 
     public bool IsValid => button != null && contentImage != null;
 }
@@ -40,8 +52,33 @@ public class SelectionPostBranchData
 {
     public string itemId;
     public GameObject contentImage;
+    public RawImage recordImage;
+    public SelectionCollectibleData[] collectibles;
+    public SelectionBranchCompletionMode completionMode;
+    public VideoClip endingVideoClip;
 
-    public bool IsValid => !string.IsNullOrWhiteSpace(itemId) && contentImage != null;
+    public bool IsValid
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(itemId))
+            {
+                return false;
+            }
+
+            switch (completionMode)
+            {
+                case SelectionBranchCompletionMode.OpenPost:
+                    return contentImage != null;
+                case SelectionBranchCompletionMode.OpenPostThenEnding:
+                    return contentImage != null && endingVideoClip != null;
+                case SelectionBranchCompletionMode.PlayEndingImmediately:
+                    return endingVideoClip != null;
+                default:
+                    return false;
+            }
+        }
+    }
 }
 
 [Serializable]
@@ -76,6 +113,29 @@ public class SelectionPostData
 
     public GameObject GetContent(string itemId)
     {
+        return GetBranch(itemId)?.contentImage;
+    }
+
+    public RawImage GetRecordImage(string itemId)
+    {
+        if (branches != null && !string.IsNullOrEmpty(itemId))
+        {
+            foreach (SelectionPostBranchData branch in branches)
+            {
+                if (branch != null
+                    && string.Equals(branch.itemId, itemId, StringComparison.Ordinal)
+                    && branch.recordImage != null)
+                {
+                    return branch.recordImage;
+                }
+            }
+        }
+
+        return recordImage;
+    }
+
+    public SelectionPostBranchData GetBranch(string itemId)
+    {
         if (branches == null || string.IsNullOrEmpty(itemId))
         {
             return null;
@@ -85,7 +145,7 @@ public class SelectionPostData
         {
             if (branch != null && string.Equals(branch.itemId, itemId, StringComparison.Ordinal))
             {
-                return branch.contentImage;
+                return branch;
             }
         }
 

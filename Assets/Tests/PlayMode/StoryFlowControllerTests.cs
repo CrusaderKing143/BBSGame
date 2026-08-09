@@ -5,9 +5,274 @@ using NUnit.Framework;
 using UnityEngine;
 using UnityEngine.TestTools;
 using UnityEngine.UI;
+using UnityEngine.Video;
 
 public class StoryFlowControllerTests
 {
+    [UnityTest]
+    public IEnumerator ForumKeepsSharedStageTitlesVisibleUntilEveryPostIsRead()
+    {
+        GameObject root = new GameObject("Parallel Forum Post Test Root");
+        ForumPanelController forumController = root.AddComponent<ForumPanelController>();
+        StoryRoundData round = CreateRound(root.transform, "D3Parallel", 4);
+        round.posts[2].unlockWithPrevious = true;
+        GameObject sharedListRoot = CreateChild(root.transform, "D3 Shared List Root");
+        round.posts[1].button.transform.SetParent(sharedListRoot.transform, false);
+        round.posts[2].button.transform.SetParent(sharedListRoot.transform, false);
+        round.posts[1].listDisplayRoot = sharedListRoot;
+        round.posts[2].listDisplayRoot = sharedListRoot;
+        StoryRoundData[] rounds = { round };
+        StoryProgress progress = new StoryProgress();
+        progress.Reset();
+        progress.MarkMailRead(round.posts);
+
+        forumController.RefreshPostButtons(rounds, 0, progress);
+        Assert.That(round.posts[0].button.gameObject.activeSelf, Is.True);
+        Assert.That(round.posts[1].button.gameObject.activeSelf, Is.False);
+        Assert.That(round.posts[2].button.gameObject.activeSelf, Is.False);
+        Assert.That(sharedListRoot.activeSelf, Is.False);
+
+        Assert.That(progress.TryOpenPost(0, 0, round.posts), Is.True);
+        Assert.That(progress.CompleteOpenedPost(round.posts), Is.False);
+        forumController.RefreshPostButtons(rounds, 0, progress);
+        Assert.That(round.posts[0].button.gameObject.activeSelf, Is.False);
+        Assert.That(round.posts[1].button.gameObject.activeSelf, Is.True);
+        Assert.That(round.posts[2].button.gameObject.activeSelf, Is.True);
+        Assert.That(round.posts[3].button.gameObject.activeSelf, Is.False);
+        Assert.That(sharedListRoot.activeSelf, Is.True);
+
+        Assert.That(progress.TryOpenPost(0, 1, round.posts), Is.True);
+        Assert.That(progress.CompleteOpenedPost(round.posts), Is.False);
+        forumController.RefreshPostButtons(rounds, 0, progress);
+        Assert.That(round.posts[1].button.gameObject.activeSelf, Is.True);
+        Assert.That(round.posts[2].button.gameObject.activeSelf, Is.True);
+        Assert.That(round.posts[1].button.interactable, Is.False);
+        Assert.That(round.posts[2].button.interactable, Is.True);
+        Assert.That(round.posts[3].button.gameObject.activeSelf, Is.False);
+        Assert.That(sharedListRoot.activeSelf, Is.True);
+
+        Assert.That(progress.TryOpenPost(0, 2, round.posts), Is.True);
+        Assert.That(progress.CompleteOpenedPost(round.posts), Is.False);
+        forumController.RefreshPostButtons(rounds, 0, progress);
+        Assert.That(round.posts[1].button.gameObject.activeSelf, Is.False);
+        Assert.That(round.posts[2].button.gameObject.activeSelf, Is.False);
+        Assert.That(round.posts[3].button.gameObject.activeSelf, Is.True);
+        Assert.That(sharedListRoot.activeSelf, Is.False);
+
+        Object.Destroy(root);
+        yield return null;
+    }
+
+    [UnityTest]
+    public IEnumerator ClosingOfficeSelectionResultPlaysEndingAndStopsRoundAdvance()
+    {
+        GameObject root = new GameObject("Office Ending Story Test Root");
+        MailPanelController mailController = root.AddComponent<MailPanelController>();
+        ForumPanelController forumController = root.AddComponent<ForumPanelController>();
+        StoryFlowController flow = root.AddComponent<StoryFlowController>();
+
+        Button mailIcon = CreateButton(root.transform, "Mail Icon");
+        Button forumIcon = CreateButton(root.transform, "Forum Icon");
+        Button pictureIcon = CreateButton(root.transform, "Picture Icon");
+        Button mailBack = CreateButton(root.transform, "Mail Back");
+        Button enterForum = CreateButton(root.transform, "Enter Forum");
+        Button postBack = CreateButton(root.transform, "Post Back");
+
+        GameObject mailPanel = CreateChild(root.transform, "Mail Panel");
+        GameObject welcomePanel = CreateChild(root.transform, "Welcome Panel");
+        GameObject postListPanel = CreateChild(root.transform, "Post List Panel");
+        GameObject postContentPanel = CreateChild(root.transform, "Post Content Panel");
+        GameObject officeResultContent = CreateChild(root.transform, "PostContent_D2_OfficeResult");
+        GameObject endVideoRoot = CreateChild(root.transform, "EndVideo");
+        VideoClip endingVideoClip = Resources.Load<VideoClip>("1");
+        Assert.That(endingVideoClip, Is.Not.Null);
+
+        StoryRoundData secondDayRound = CreateRound(root.transform, "D2", 1);
+        SelectionPostBranchData officeBranch = new SelectionPostBranchData
+        {
+            itemId = "office",
+            contentImage = officeResultContent,
+            completionMode = SelectionBranchCompletionMode.OpenPostThenEnding,
+            endingVideoClip = endingVideoClip
+        };
+        secondDayRound.selectionPost = new SelectionPostData
+        {
+            categoryType = SelectionCategoryType.Background,
+            branches = new[] { officeBranch }
+        };
+        StoryRoundData nextRound = CreateRound(root.transform, "D3", 0);
+        StoryRoundData[] rounds = { secondDayRound, nextRound };
+
+        SetField(mailController, "mailPanel", mailPanel);
+        SetField(mailController, "backButton", mailBack);
+        SetField(forumController, "welcomePanel", welcomePanel);
+        SetField(forumController, "postListPanel", postListPanel);
+        SetField(forumController, "postContentPanel", postContentPanel);
+        SetField(forumController, "enterForumButton", enterForum);
+        SetField(forumController, "postBackButton", postBack);
+
+        SetField(flow, "mailButton", mailIcon);
+        SetField(flow, "forumButton", forumIcon);
+        SetField(flow, "pictureButton", pictureIcon);
+        SetField(flow, "mailPanelController", mailController);
+        SetField(flow, "forumPanelController", forumController);
+        SetField(flow, "endVideoRoot", endVideoRoot);
+        SetField(flow, "rounds", rounds);
+
+        yield return null;
+
+        Assert.That(endVideoRoot.activeSelf, Is.False);
+
+        FieldInfo progressField = typeof(StoryFlowController).GetField(
+            "progress",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.That(progressField, Is.Not.Null);
+        StoryProgress progress = (StoryProgress)progressField.GetValue(flow);
+        progress.MarkMailRead(true);
+        Assert.That(progress.TryOpenPost(0, 0, secondDayRound.PostCount), Is.True);
+        Assert.That(
+            progress.CompleteOpenedPost(secondDayRound.PostCount, true),
+            Is.False);
+        Assert.That(progress.TrySubmitSelection(), Is.True);
+        Assert.That(progress.TryOpenSelectionPost(0), Is.True);
+        SetField(flow, "openedSelectionBranch", officeBranch);
+
+        mailPanel.SetActive(true);
+        postContentPanel.SetActive(true);
+        officeResultContent.SetActive(true);
+
+        LogAssert.Expect(
+            LogType.Warning,
+            "[StoryFlowController] An ending was reached, but EndVideo Player is not configured.");
+        flow.BackFromPostContent();
+
+        Assert.That(flow.IsStoryEnded, Is.True);
+        Assert.That(flow.CurrentRoundIndex, Is.EqualTo(0));
+        Assert.That(endVideoRoot.activeSelf, Is.True);
+        Assert.That(mailPanel.activeSelf, Is.False);
+        Assert.That(postContentPanel.activeSelf, Is.False);
+        Assert.That(officeResultContent.activeSelf, Is.False);
+        Assert.That(mailIcon.interactable, Is.False);
+        Assert.That(forumIcon.interactable, Is.False);
+        Assert.That(pictureIcon.interactable, Is.False);
+
+        flow.OpenMailPanel();
+        flow.OpenForum();
+        flow.OpenSelectionPanel();
+        Assert.That(mailPanel.activeSelf, Is.False);
+        Assert.That(postContentPanel.activeSelf, Is.False);
+
+        flow.ResetStory();
+        Assert.That(flow.IsStoryEnded, Is.False);
+        Assert.That(flow.CurrentRoundIndex, Is.EqualTo(0));
+        Assert.That(endVideoRoot.activeSelf, Is.False);
+        Assert.That(mailIcon.interactable, Is.True);
+
+        Object.Destroy(root);
+        yield return null;
+    }
+
+    [UnityTest]
+    public IEnumerator ImmediateSelectionEndingSkipsResultPostAndEndsStory()
+    {
+        GameObject root = new GameObject("Immediate Selection Ending Test Root");
+        MailPanelController mailController = root.AddComponent<MailPanelController>();
+        ForumPanelController forumController = root.AddComponent<ForumPanelController>();
+        StoryFlowController flow = root.AddComponent<StoryFlowController>();
+
+        GameObject selectionPanelObject = CreateChild(root.transform, "Selection Panel");
+        SelectionPanelController selectionPanel =
+            selectionPanelObject.AddComponent<SelectionPanelController>();
+        selectionPanelObject.SetActive(false);
+        Sprite selectionSprite = ConfigureSelectionPanel(
+            selectionPanelObject.transform,
+            selectionPanel);
+
+        Button mailIcon = CreateButton(root.transform, "Mail Icon");
+        Button forumIcon = CreateButton(root.transform, "Forum Icon");
+        Button pictureIcon = CreateButton(root.transform, "Picture Icon");
+        Button mailBack = CreateButton(root.transform, "Mail Back");
+        Button enterForum = CreateButton(root.transform, "Enter Forum");
+        Button postBack = CreateButton(root.transform, "Post Back");
+        GameObject mailPanel = CreateChild(root.transform, "Mail Panel");
+        GameObject welcomePanel = CreateChild(root.transform, "Welcome Panel");
+        GameObject postListPanel = CreateChild(root.transform, "Post List Panel");
+        GameObject postContentPanel = CreateChild(root.transform, "Post Content Panel");
+        GameObject endVideoRoot = CreateChild(root.transform, "EndVideo");
+
+        VideoClip endingVideoClip = Resources.Load<VideoClip>("2");
+        Assert.That(endingVideoClip, Is.Not.Null);
+        StoryRoundData endingRound = CreateRound(root.transform, "D3", 1);
+        endingRound.selectionPost = new SelectionPostData
+        {
+            categoryType = SelectionCategoryType.Character,
+            branches = new[]
+            {
+                new SelectionPostBranchData
+                {
+                    itemId = "Character-0",
+                    completionMode = SelectionBranchCompletionMode.PlayEndingImmediately,
+                    endingVideoClip = endingVideoClip
+                }
+            }
+        };
+        StoryRoundData[] rounds = { endingRound };
+
+        SetField(mailController, "mailPanel", mailPanel);
+        SetField(mailController, "backButton", mailBack);
+        SetField(forumController, "welcomePanel", welcomePanel);
+        SetField(forumController, "postListPanel", postListPanel);
+        SetField(forumController, "postContentPanel", postContentPanel);
+        SetField(forumController, "enterForumButton", enterForum);
+        SetField(forumController, "postBackButton", postBack);
+        SetField(flow, "mailButton", mailIcon);
+        SetField(flow, "forumButton", forumIcon);
+        SetField(flow, "pictureButton", pictureIcon);
+        SetField(flow, "mailPanelController", mailController);
+        SetField(flow, "forumPanelController", forumController);
+        SetField(flow, "selectionPanelController", selectionPanel);
+        SetField(flow, "endVideoRoot", endVideoRoot);
+        SetField(flow, "rounds", rounds);
+
+        yield return null;
+
+        FieldInfo committedSelectionsField = typeof(SelectionPanelController).GetField(
+            "committedSelections",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.That(committedSelectionsField, Is.Not.Null);
+        int[] committedSelections =
+            (int[])committedSelectionsField.GetValue(selectionPanel);
+        committedSelections[(int)SelectionCategoryType.Character] = 0;
+
+        FieldInfo progressField = typeof(StoryFlowController).GetField(
+            "progress",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.That(progressField, Is.Not.Null);
+        StoryProgress progress = (StoryProgress)progressField.GetValue(flow);
+        progress.MarkMailRead(true);
+        Assert.That(progress.TryOpenPost(0, 0, 1), Is.True);
+        Assert.That(progress.CompleteOpenedPost(1, true), Is.False);
+
+        MethodInfo submitHandler = typeof(StoryFlowController).GetMethod(
+            "HandleSelectionSubmitted",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.That(submitHandler, Is.Not.Null);
+        LogAssert.Expect(
+            LogType.Warning,
+            "[StoryFlowController] An ending was reached, but EndVideo Player is not configured.");
+        submitHandler.Invoke(flow, null);
+
+        Assert.That(flow.IsStoryEnded, Is.True);
+        Assert.That(progress.Phase, Is.EqualTo(StoryRoundPhase.RoundCompleted));
+        Assert.That(progress.SelectionPostOpened, Is.False);
+        Assert.That(endVideoRoot.activeSelf, Is.True);
+        Assert.That(postContentPanel.activeSelf, Is.False);
+
+        Object.Destroy(selectionSprite);
+        Object.Destroy(root);
+        yield return null;
+    }
+
     [UnityTest]
     public IEnumerator SelectionSubmissionOpensMappedResultPostBeforeAdvancing()
     {

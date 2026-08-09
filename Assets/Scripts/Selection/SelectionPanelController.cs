@@ -83,6 +83,24 @@ public sealed class SelectionBackgroundLayoutDefinition
     }
 }
 
+[Serializable]
+public sealed class SelectionRoundBackgroundDefinition
+{
+    [SerializeField, Min(0)] private int roundIndex;
+    [SerializeField] private SelectionItemDefinition[] items;
+    [SerializeField] private SelectionBackgroundLayoutDefinition[] layouts;
+    [SerializeField] private SelectionCategoryType[] requiredCategoriesOverride;
+    [SerializeField] private string[] allowedCharacterItemIds;
+    [SerializeField] private bool singleCharacterPlacement;
+
+    public int RoundIndex => roundIndex;
+    public SelectionItemDefinition[] Items => items;
+    public SelectionBackgroundLayoutDefinition[] Layouts => layouts;
+    public SelectionCategoryType[] RequiredCategoriesOverride => requiredCategoriesOverride;
+    public string[] AllowedCharacterItemIds => allowedCharacterItemIds;
+    public bool SingleCharacterPlacement => singleCharacterPlacement;
+}
+
 public sealed partial class SelectionPanelController : MonoBehaviour
 {
     private const int CategoryCount = 3;
@@ -98,6 +116,7 @@ public sealed partial class SelectionPanelController : MonoBehaviour
 
     [Header("Background Layouts")]
     [SerializeField] private SelectionBackgroundLayoutDefinition[] backgroundLayouts;
+    [SerializeField] private SelectionRoundBackgroundDefinition[] roundBackgrounds;
 
     [Header("Selection Rules")]
     [SerializeField] private SelectionCategoryType[] requiredCategories =
@@ -127,6 +146,8 @@ public sealed partial class SelectionPanelController : MonoBehaviour
 
     private SelectionCategoryType currentCategory = SelectionCategoryType.Character;
     private SelectionBackgroundLayoutDefinition activeLayout;
+    private SelectionRoundBackgroundDefinition activeRoundBackground;
+    private int configuredRoundIndex = -1;
     private bool configurationValid;
 
     public UnityEvent OnSubmitted => onSubmitted;
@@ -212,6 +233,96 @@ public sealed partial class SelectionPanelController : MonoBehaviour
     {
         configurationValid = RebuildCategoryLookup(false);
         return configurationValid;
+    }
+
+    public void ConfigureForRound(int roundIndex)
+    {
+        int safeRoundIndex = Mathf.Max(0, roundIndex);
+        SelectionRoundBackgroundDefinition nextBackground = FindRoundBackground(safeRoundIndex);
+        if (configuredRoundIndex == safeRoundIndex
+            && ReferenceEquals(activeRoundBackground, nextBackground))
+        {
+            return;
+        }
+
+        CancelPendingSubmission();
+        UnbindButtons();
+        DeactivateEveryBackgroundLayout();
+
+        configuredRoundIndex = safeRoundIndex;
+        activeRoundBackground = nextBackground;
+        FillSelections(committedSelections, -1);
+        FillSelections(draftSelections, -1);
+        ResetPlacementComposition();
+        ClearCommittedSnapshot();
+        currentCategory = initialCategory;
+        configurationValid = RebuildCategoryLookup(false);
+        PreparePlacementLayers();
+        BindButtons();
+        HideAllItemViews();
+        RefreshSubmitButton();
+    }
+
+    private SelectionRoundBackgroundDefinition FindRoundBackground(int roundIndex)
+    {
+        if (roundBackgrounds == null)
+        {
+            return null;
+        }
+
+        SelectionRoundBackgroundDefinition result = null;
+        foreach (SelectionRoundBackgroundDefinition definition in roundBackgrounds)
+        {
+            if (definition == null || definition.RoundIndex != roundIndex)
+            {
+                continue;
+            }
+
+            if (result != null)
+            {
+                WarnOnce($"Round {roundIndex} has more than one Background definition; the first one is used.");
+                break;
+            }
+
+            result = definition;
+        }
+
+        return result;
+    }
+
+    private void DeactivateEveryBackgroundLayout()
+    {
+        HashSet<GameObject> roots = new HashSet<GameObject>();
+        DeactivateBackgroundLayouts(backgroundLayouts, roots);
+
+        if (roundBackgrounds == null)
+        {
+            return;
+        }
+
+        foreach (SelectionRoundBackgroundDefinition definition in roundBackgrounds)
+        {
+            DeactivateBackgroundLayouts(definition?.Layouts, roots);
+        }
+    }
+
+    private static void DeactivateBackgroundLayouts(
+        SelectionBackgroundLayoutDefinition[] layouts,
+        HashSet<GameObject> roots)
+    {
+        if (layouts == null)
+        {
+            return;
+        }
+
+        foreach (SelectionBackgroundLayoutDefinition layout in layouts)
+        {
+            GameObject root = layout?.LayoutRoot;
+            if (root != null && roots.Add(root))
+            {
+                root.SetActive(false);
+            }
+        }
     }
 
     public void OpenPanel()
@@ -336,6 +447,32 @@ public sealed partial class SelectionPanelController : MonoBehaviour
         BindButtons();
     }
 
+    private SelectionBackgroundLayoutDefinition[] CurrentBackgroundLayouts =>
+        activeRoundBackground?.Layouts ?? backgroundLayouts;
+
+    private SelectionCategoryType[] CurrentRequiredCategories
+    {
+        get
+        {
+            SelectionCategoryType[] overrideCategories =
+                activeRoundBackground?.RequiredCategoriesOverride;
+            return overrideCategories != null && overrideCategories.Length > 0
+                ? overrideCategories
+                : requiredCategories;
+        }
+    }
+
+    private SelectionItemDefinition[] GetCategoryItems(SelectionCategoryDefinition category)
+    {
+        if (category?.CategoryType == SelectionCategoryType.Background
+            && activeRoundBackground != null)
+        {
+            return activeRoundBackground.Items;
+        }
+
+        return category?.Items;
+    }
+
     private bool RebuildCategoryLookup(bool logWarnings)
     {
         categoryLookup.Clear();
@@ -353,7 +490,8 @@ public sealed partial class SelectionPanelController : MonoBehaviour
             WarnIfRequested($"Initial category {initialCategory} is invalid.", logWarnings);
         }
 
-        if (requiredCategories == null || requiredCategories.Length == 0)
+        SelectionCategoryType[] currentRequiredCategories = CurrentRequiredCategories;
+        if (currentRequiredCategories == null || currentRequiredCategories.Length == 0)
         {
             valid = false;
             WarnIfRequested("At least one required category must be configured.", logWarnings);
@@ -361,7 +499,7 @@ public sealed partial class SelectionPanelController : MonoBehaviour
         else
         {
             HashSet<SelectionCategoryType> requiredCategoryTypes = new HashSet<SelectionCategoryType>();
-            foreach (SelectionCategoryType requiredCategory in requiredCategories)
+            foreach (SelectionCategoryType requiredCategory in currentRequiredCategories)
             {
                 if (!IsKnownCategory(requiredCategory) || !requiredCategoryTypes.Add(requiredCategory))
                 {
@@ -395,7 +533,7 @@ public sealed partial class SelectionPanelController : MonoBehaviour
 
             categoryLookup.Add(category.CategoryType, category);
 
-            SelectionItemDefinition[] items = category.Items;
+            SelectionItemDefinition[] items = GetCategoryItems(category);
             if (items == null || items.Length == 0)
             {
                 valid = false;
@@ -460,6 +598,7 @@ public sealed partial class SelectionPanelController : MonoBehaviour
             }
         }
 
+        valid &= ValidateCurrentRoundCharacterRules(logWarnings);
         valid &= ValidateBackgroundLayouts(logWarnings);
 
         return valid;
@@ -470,13 +609,14 @@ public sealed partial class SelectionPanelController : MonoBehaviour
         if (!categoryLookup.TryGetValue(
                 SelectionCategoryType.Background,
                 out SelectionCategoryDefinition backgroundCategory)
-            || backgroundCategory.Items == null)
+            || GetCategoryItems(backgroundCategory) == null)
         {
             return false;
         }
 
-        int backgroundCount = backgroundCategory.Items.Length;
-        if (backgroundLayouts == null || backgroundLayouts.Length != backgroundCount)
+        SelectionBackgroundLayoutDefinition[] layouts = CurrentBackgroundLayouts;
+        int backgroundCount = GetCategoryItems(backgroundCategory).Length;
+        if (layouts == null || layouts.Length != backgroundCount)
         {
             WarnIfRequested(
                 "Background layout count must match the Background item count.",
@@ -490,9 +630,9 @@ public sealed partial class SelectionPanelController : MonoBehaviour
         HashSet<Button> buttons = new HashSet<Button>();
         HashSet<Image> placementLayers = new HashSet<Image>();
 
-        for (int layoutIndex = 0; layoutIndex < backgroundLayouts.Length; layoutIndex++)
+        for (int layoutIndex = 0; layoutIndex < layouts.Length; layoutIndex++)
         {
-            SelectionBackgroundLayoutDefinition layout = backgroundLayouts[layoutIndex];
+            SelectionBackgroundLayoutDefinition layout = layouts[layoutIndex];
             if (layout == null)
             {
                 valid = false;
@@ -604,12 +744,13 @@ public sealed partial class SelectionPanelController : MonoBehaviour
     {
         UnbindButtons();
 
-        if (backgroundLayouts == null)
+        SelectionBackgroundLayoutDefinition[] layouts = CurrentBackgroundLayouts;
+        if (layouts == null)
         {
             return;
         }
 
-        foreach (SelectionBackgroundLayoutDefinition layout in backgroundLayouts)
+        foreach (SelectionBackgroundLayoutDefinition layout in layouts)
         {
             if (layout == null)
             {
@@ -661,7 +802,6 @@ public sealed partial class SelectionPanelController : MonoBehaviour
         UpdateCategoryButtons();
 
         if (!categoryLookup.TryGetValue(categoryType, out SelectionCategoryDefinition category)
-            || category.Items == null
             || itemViewPrefab == null
             || activeLayout?.ItemRoot == null)
         {
@@ -670,11 +810,19 @@ public sealed partial class SelectionPanelController : MonoBehaviour
             return;
         }
 
+        SelectionItemDefinition[] items = GetCategoryItems(category);
+        if (items == null)
+        {
+            HideAllItemViews();
+            RefreshSubmitButton();
+            return;
+        }
+
         MoveItemViewsToActiveRoot();
         visibleItemIndices.Clear();
-        for (int itemIndex = 0; itemIndex < category.Items.Length; itemIndex++)
+        for (int itemIndex = 0; itemIndex < items.Length; itemIndex++)
         {
-            SelectionItemDefinition item = category.Items[itemIndex];
+            SelectionItemDefinition item = items[itemIndex];
             if (item != null && IsItemAvailable(categoryType, item))
             {
                 visibleItemIndices.Add(itemIndex);
@@ -695,7 +843,7 @@ public sealed partial class SelectionPanelController : MonoBehaviour
 
             int itemIndex = visibleItemIndices[viewIndex];
             int capturedIndex = itemIndex;
-            SelectionItemDefinition item = category.Items[itemIndex];
+            SelectionItemDefinition item = items[itemIndex];
             bool selected = categoryType == SelectionCategoryType.Background
                 ? itemIndex == selectedIndex
                 : IsSelectedPlacement(categoryType, item?.ItemId);
@@ -776,12 +924,13 @@ public sealed partial class SelectionPanelController : MonoBehaviour
 
     private void UpdateCategoryButtons()
     {
-        if (backgroundLayouts == null)
+        SelectionBackgroundLayoutDefinition[] layouts = CurrentBackgroundLayouts;
+        if (layouts == null)
         {
             return;
         }
 
-        foreach (SelectionBackgroundLayoutDefinition layout in backgroundLayouts)
+        foreach (SelectionBackgroundLayoutDefinition layout in layouts)
         {
             if (layout == null)
             {
@@ -821,10 +970,13 @@ public sealed partial class SelectionPanelController : MonoBehaviour
     private void ActivateSelectedBackgroundLayout()
     {
         activeLayout = null;
-        if (backgroundLayouts == null)
+        SelectionBackgroundLayoutDefinition[] layouts = CurrentBackgroundLayouts;
+        if (layouts == null)
         {
             return;
         }
+
+        DeactivateEveryBackgroundLayout();
 
         int selectedIndex = draftSelections[ToIndex(SelectionCategoryType.Background)];
         bool hasValidSelection = TryGetItem(
@@ -832,9 +984,9 @@ public sealed partial class SelectionPanelController : MonoBehaviour
             selectedIndex,
             out _);
 
-        for (int layoutIndex = 0; layoutIndex < backgroundLayouts.Length; layoutIndex++)
+        for (int layoutIndex = 0; layoutIndex < layouts.Length; layoutIndex++)
         {
-            SelectionBackgroundLayoutDefinition layout = backgroundLayouts[layoutIndex];
+            SelectionBackgroundLayoutDefinition layout = layouts[layoutIndex];
             bool selected = hasValidSelection && layoutIndex == selectedIndex;
             if (layout?.LayoutRoot != null)
             {
@@ -866,12 +1018,13 @@ public sealed partial class SelectionPanelController : MonoBehaviour
     private void RefreshSubmitButton()
     {
         bool canSubmit = !submissionInProgress && CanSubmit();
-        if (backgroundLayouts == null)
+        SelectionBackgroundLayoutDefinition[] layouts = CurrentBackgroundLayouts;
+        if (layouts == null)
         {
             return;
         }
 
-        foreach (SelectionBackgroundLayoutDefinition layout in backgroundLayouts)
+        foreach (SelectionBackgroundLayoutDefinition layout in layouts)
         {
             if (layout?.SubmitButton != null)
             {
@@ -887,12 +1040,13 @@ public sealed partial class SelectionPanelController : MonoBehaviour
             return false;
         }
 
-        if (requiredCategories == null)
+        SelectionCategoryType[] currentRequiredCategories = CurrentRequiredCategories;
+        if (currentRequiredCategories == null)
         {
             return false;
         }
 
-        foreach (SelectionCategoryType categoryType in requiredCategories)
+        foreach (SelectionCategoryType categoryType in currentRequiredCategories)
         {
             if (!IsKnownCategory(categoryType))
             {
@@ -929,14 +1083,18 @@ public sealed partial class SelectionPanelController : MonoBehaviour
     {
         item = null;
         if (!categoryLookup.TryGetValue(categoryType, out SelectionCategoryDefinition category)
-            || category.Items == null
-            || itemIndex < 0
-            || itemIndex >= category.Items.Length)
+            || itemIndex < 0)
         {
             return false;
         }
 
-        item = category.Items[itemIndex];
+        SelectionItemDefinition[] items = GetCategoryItems(category);
+        if (items == null || itemIndex >= items.Length)
+        {
+            return false;
+        }
+
+        item = items[itemIndex];
         return item != null;
     }
 
@@ -951,15 +1109,20 @@ public sealed partial class SelectionPanelController : MonoBehaviour
         if (string.IsNullOrWhiteSpace(itemId)
             || !categoryLookup.TryGetValue(
                 categoryType,
-                out SelectionCategoryDefinition category)
-            || category.Items == null)
+                out SelectionCategoryDefinition category))
         {
             return false;
         }
 
-        for (int index = 0; index < category.Items.Length; index++)
+        SelectionItemDefinition[] items = GetCategoryItems(category);
+        if (items == null)
         {
-            SelectionItemDefinition candidate = category.Items[index];
+            return false;
+        }
+
+        for (int index = 0; index < items.Length; index++)
+        {
+            SelectionItemDefinition candidate = items[index];
             if (candidate != null
                 && string.Equals(candidate.ItemId, itemId, StringComparison.Ordinal))
             {
@@ -981,6 +1144,11 @@ public sealed partial class SelectionPanelController : MonoBehaviour
             return false;
         }
 
+        if (!IsItemAllowedInCurrentRound(categoryType, item.ItemId))
+        {
+            return false;
+        }
+
         if (categoryType == SelectionCategoryType.Background)
         {
             return true;
@@ -993,6 +1161,62 @@ public sealed partial class SelectionPanelController : MonoBehaviour
 
         return IsCollectibleCategory(categoryType)
             && IsItemCollected(categoryType, item.ItemId);
+    }
+
+    private bool IsItemAllowedInCurrentRound(
+        SelectionCategoryType categoryType,
+        string itemId)
+    {
+        if (categoryType != SelectionCategoryType.Character)
+        {
+            return true;
+        }
+
+        string[] allowedItemIds = activeRoundBackground?.AllowedCharacterItemIds;
+        if (allowedItemIds == null || allowedItemIds.Length == 0)
+        {
+            return true;
+        }
+
+        foreach (string allowedItemId in allowedItemIds)
+        {
+            if (string.Equals(allowedItemId, itemId, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private bool ValidateCurrentRoundCharacterRules(bool logWarnings)
+    {
+        string[] allowedItemIds = activeRoundBackground?.AllowedCharacterItemIds;
+        if (allowedItemIds == null || allowedItemIds.Length == 0)
+        {
+            return true;
+        }
+
+        bool valid = true;
+        HashSet<string> uniqueItemIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string itemId in allowedItemIds)
+        {
+            if (string.IsNullOrWhiteSpace(itemId)
+                || !uniqueItemIds.Add(itemId)
+                || !TryFindItem(
+                    SelectionCategoryType.Character,
+                    itemId,
+                    out _,
+                    out _))
+            {
+                valid = false;
+                WarnIfRequested(
+                    $"Round {configuredRoundIndex} allowed Character item ID '{itemId}' is missing or duplicated.",
+                    logWarnings);
+            }
+        }
+
+        return valid;
     }
 
     private static bool IsCollectibleCategory(SelectionCategoryType categoryType)

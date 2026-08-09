@@ -91,6 +91,7 @@ public class SelectionPanelControllerTests
         panel.Controller.OpenPanel();
         yield return null;
 
+        panel.Layouts[0].CharacterButton.onClick.Invoke();
         GetActiveViews(panel.ItemRoot)[1].Button.onClick.Invoke();
         Assert.That(GetPlacedViews(panel.Layouts[0].CharacterPreview.rectTransform), Has.Length.EqualTo(2));
         Assert.That(panel.Controller.DeleteSelectedDraftItem(), Is.True);
@@ -194,6 +195,153 @@ public class SelectionPanelControllerTests
         Assert.That(panel.Layouts[0].Root.activeSelf, Is.False);
         Assert.That(panel.Layouts[1].Root.activeSelf, Is.True);
         Assert.That(panel.Controller.GetCommittedSelectionIndex(SelectionCategoryType.Background), Is.EqualTo(1));
+    }
+
+    [UnityTest]
+    public IEnumerator RoundBackgroundOverrideUsesJiubaAndOfficeAndClearsPreviousSelection()
+    {
+        TestPanel panel = CreatePanel(backgroundOnly: true);
+        TestLayout officeLayout = CreateLayout(panel.PanelObject.transform, 2);
+
+        SelectionItemDefinition[] roundItems =
+            CreateCategory(SelectionCategoryType.Background, 2).Items;
+        SetField(roundItems[0], "itemId", "jiuBa");
+        SetField(roundItems[1], "itemId", "office");
+
+        SelectionRoundBackgroundDefinition roundBackground =
+            new SelectionRoundBackgroundDefinition();
+        SetField(roundBackground, "roundIndex", 1);
+        SetField(roundBackground, "items", roundItems);
+        SetField(
+            roundBackground,
+            "layouts",
+            new[] { panel.Layouts[0].Definition, officeLayout.Definition });
+        SetField(panel.Controller, "roundBackgrounds", new[] { roundBackground });
+
+        panel.Controller.ConfigureForRound(0);
+        panel.Controller.OpenPanel();
+        yield return null;
+
+        GetActiveViews(panel.Layouts[0].ItemRoot)[1].Button.onClick.Invoke();
+        panel.Layouts[1].SubmitButton.onClick.Invoke();
+        Assert.That(
+            panel.Controller.GetCommittedItemId(SelectionCategoryType.Background),
+            Is.EqualTo("background-1"));
+
+        panel.Controller.ConfigureForRound(1);
+        panel.Controller.OpenPanel();
+        yield return null;
+
+        Assert.That(
+            panel.Controller.GetCommittedItemId(SelectionCategoryType.Background),
+            Is.Empty);
+        Assert.That(panel.Layouts[0].Root.activeSelf, Is.True);
+        Assert.That(panel.Layouts[1].Root.activeSelf, Is.False);
+        Assert.That(officeLayout.Root.activeSelf, Is.False);
+        Assert.That(GetActiveViews(panel.Layouts[0].ItemRoot)[0].IsSelected, Is.True);
+
+        GetActiveViews(panel.Layouts[0].ItemRoot)[1].Button.onClick.Invoke();
+
+        Assert.That(panel.Layouts[0].Root.activeSelf, Is.False);
+        Assert.That(panel.Layouts[1].Root.activeSelf, Is.False);
+        Assert.That(officeLayout.Root.activeSelf, Is.True);
+        Assert.That(GetActiveViews(officeLayout.ItemRoot)[1].IsSelected, Is.True);
+
+        officeLayout.SubmitButton.onClick.Invoke();
+        Assert.That(
+            panel.Controller.GetCommittedItemId(SelectionCategoryType.Background),
+            Is.EqualTo("office"));
+
+        panel.Controller.ConfigureForRound(0);
+        panel.Controller.OpenPanel();
+        yield return null;
+
+        Assert.That(
+            panel.Controller.GetCommittedItemId(SelectionCategoryType.Background),
+            Is.Empty);
+        Assert.That(panel.Layouts[0].Root.activeSelf, Is.True);
+        Assert.That(officeLayout.Root.activeSelf, Is.False);
+        Assert.That(GetActiveViews(panel.Layouts[0].ItemRoot)[0].IsSelected, Is.True);
+    }
+
+    [UnityTest]
+    public IEnumerator RoundCharacterWhitelistRequiresAndReplacesSingleCharacter()
+    {
+        TestPanel panel = CreatePanel(backgroundOnly: true, unlockAllItems: false);
+        FieldInfo categoriesField = typeof(SelectionPanelController).GetField(
+            "categories",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.That(categoriesField, Is.Not.Null);
+        SelectionCategoryDefinition[] categories =
+            (SelectionCategoryDefinition[])categoriesField.GetValue(panel.Controller);
+        SelectionItemDefinition[] characterItems = categories
+            .Single(category => category.CategoryType == SelectionCategoryType.Character)
+            .Items;
+        SetField(characterItems[0], "itemId", "character-day3-assistant");
+        SetField(characterItems[0], "unlockedByDefault", false);
+        SetField(characterItems[1], "itemId", "character-day3-paparazzi");
+        SetField(characterItems[1], "unlockedByDefault", false);
+
+        SelectionItemDefinition[] roundItems =
+            CreateCategory(SelectionCategoryType.Background, 1).Items;
+        SetField(roundItems[0], "itemId", "cafe");
+
+        SelectionRoundBackgroundDefinition roundBackground =
+            new SelectionRoundBackgroundDefinition();
+        SetField(roundBackground, "roundIndex", 2);
+        SetField(roundBackground, "items", roundItems);
+        SetField(
+            roundBackground,
+            "layouts",
+            new[] { panel.Layouts[0].Definition });
+        SetField(
+            roundBackground,
+            "requiredCategoriesOverride",
+            new[]
+            {
+                SelectionCategoryType.Character,
+                SelectionCategoryType.Background
+            });
+        SetField(
+            roundBackground,
+            "allowedCharacterItemIds",
+            new[]
+            {
+                "character-day3-assistant",
+                "character-day3-paparazzi"
+            });
+        SetField(roundBackground, "singleCharacterPlacement", true);
+        SetField(panel.Controller, "roundBackgrounds", new[] { roundBackground });
+        SetField(
+            panel.Controller,
+            "initialCategory",
+            SelectionCategoryType.Character);
+
+        panel.Controller.ConfigureForRound(2);
+        Assert.That(panel.Controller.CollectItem(
+            SelectionCategoryType.Character,
+            "character-day3-assistant"), Is.True);
+        Assert.That(panel.Controller.CollectItem(
+            SelectionCategoryType.Character,
+            "character-day3-paparazzi"), Is.True);
+        panel.Controller.OpenPanel();
+        yield return null;
+
+        Assert.That(GetActiveViews(panel.ItemRoot), Has.Length.EqualTo(2));
+        Assert.That(panel.SubmitButton.interactable, Is.False);
+
+        GetActiveViews(panel.ItemRoot)[0].Button.onClick.Invoke();
+        Assert.That(
+            GetPlacedViews(panel.Layouts[0].CharacterPreview.rectTransform).Single().ItemId,
+            Is.EqualTo("character-day3-assistant"));
+        Assert.That(panel.SubmitButton.interactable, Is.True);
+
+        GetActiveViews(panel.ItemRoot)[1].Button.onClick.Invoke();
+        SelectionPlacedItemView[] placedCharacters =
+            GetPlacedViews(panel.Layouts[0].CharacterPreview.rectTransform);
+        Assert.That(placedCharacters, Has.Length.EqualTo(1));
+        Assert.That(placedCharacters[0].ItemId, Is.EqualTo("character-day3-paparazzi"));
+        Assert.That(panel.SubmitButton.interactable, Is.True);
     }
 
     [UnityTest]

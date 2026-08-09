@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -23,11 +24,10 @@ public class ForumPanelController : MonoBehaviour
     public void ShowPostList(
         StoryRoundData[] rounds,
         int currentRoundIndex,
-        int unlockedPostIndex,
-        bool selectionPostUnlocked)
+        StoryProgress progress)
     {
         HideAllPostContents(rounds);
-        RefreshPostButtons(rounds, currentRoundIndex, unlockedPostIndex, selectionPostUnlocked);
+        RefreshPostButtons(rounds, currentRoundIndex, progress);
         SetActive(welcomePanel, false);
         SetActive(postListPanel, true);
         SetActive(postContentPanel, false);
@@ -64,8 +64,7 @@ public class ForumPanelController : MonoBehaviour
     public void RefreshPostButtons(
         StoryRoundData[] rounds,
         int currentRoundIndex,
-        int unlockedPostIndex,
-        bool selectionPostUnlocked)
+        StoryProgress progress)
     {
         if (rounds == null)
         {
@@ -77,20 +76,45 @@ public class ForumPanelController : MonoBehaviour
             PostData[] posts = rounds[roundIndex]?.posts;
             if (posts != null)
             {
+                Dictionary<GameObject, bool> sharedRootVisibility =
+                    new Dictionary<GameObject, bool>();
                 for (int postIndex = 0; postIndex < posts.Length; postIndex++)
                 {
-                    Button button = posts[postIndex]?.button;
-                    bool isCurrentPost = roundIndex == currentRoundIndex
-                        && postIndex == unlockedPostIndex;
-                    SetActive(button?.gameObject, isCurrentPost);
+                    PostData post = posts[postIndex];
+                    Button button = post?.button;
+                    bool isCurrentRound = roundIndex == currentRoundIndex;
+                    bool isCurrentPost = isCurrentRound
+                        && progress != null
+                        && progress.IsPostAvailable(postIndex, posts);
+                    GameObject sharedRoot = post?.listDisplayRoot;
+                    bool isVisible = sharedRoot != null
+                        ? isCurrentRound
+                            && progress != null
+                            && progress.IsPostInCurrentStage(postIndex, posts)
+                        : isCurrentPost;
+                    SetActive(button?.gameObject, isVisible);
                     if (button != null)
                     {
                         button.interactable = isCurrentPost;
                     }
+
+                    if (sharedRoot != null)
+                    {
+                        bool wasVisible = sharedRootVisibility.TryGetValue(
+                            sharedRoot,
+                            out bool visible) && visible;
+                        sharedRootVisibility[sharedRoot] = wasVisible || isVisible;
+                    }
+                }
+
+                foreach (KeyValuePair<GameObject, bool> entry in sharedRootVisibility)
+                {
+                    SetActive(entry.Key, entry.Value);
                 }
             }
 
-            bool resultPostUnlocked = roundIndex == currentRoundIndex && selectionPostUnlocked;
+            bool resultPostUnlocked = roundIndex == currentRoundIndex
+                && progress?.SelectionPostUnlocked == true;
             Button resultPostButton = rounds[roundIndex]?.selectionPost?.button;
             SetActive(resultPostButton?.gameObject, resultPostUnlocked);
             if (resultPostButton != null)
