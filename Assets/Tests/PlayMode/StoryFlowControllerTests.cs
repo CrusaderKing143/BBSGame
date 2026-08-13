@@ -10,6 +10,56 @@ using UnityEngine.Video;
 public class StoryFlowControllerTests
 {
     [UnityTest]
+    public IEnumerator CollectibleFeedbackFlipsToUpperLeftOnCanvasRightHalf()
+    {
+        GameObject canvasObject = new GameObject(
+            "Collectible Feedback Canvas",
+            typeof(RectTransform),
+            typeof(Canvas));
+        RectTransform canvasRect = canvasObject.GetComponent<RectTransform>();
+        canvasRect.sizeDelta = new Vector2(800f, 600f);
+        canvasRect.localScale = Vector3.one * 0.75f;
+
+        StoryFlowController flow = canvasObject.AddComponent<StoryFlowController>();
+        SetField(flow, "collectibleFeedbackDuration", 10f);
+        Button leftButton = CreateButton(canvasRect, "Left Collectible");
+        Button rightButton = CreateButton(canvasRect, "Right Collectible");
+        ((RectTransform)leftButton.transform).anchoredPosition = new Vector2(-200f, 0f);
+        ((RectTransform)rightButton.transform).anchoredPosition = new Vector2(200f, 0f);
+
+        Sprite sprite = Sprite.Create(
+            Texture2D.whiteTexture,
+            new Rect(0f, 0f, 1f, 1f),
+            new Vector2(0.5f, 0.5f));
+        MethodInfo showFeedback = typeof(StoryFlowController).GetMethod(
+            "ShowCollectibleFeedback",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+        Assert.That(showFeedback, Is.Not.Null);
+
+        showFeedback.Invoke(flow, new object[] { leftButton, sprite });
+        RectTransform leftFeedback = (RectTransform)leftButton.transform
+            .Find("Collectible Feedback");
+        Assert.That(leftFeedback, Is.Not.Null);
+        Assert.That(leftFeedback.anchorMin, Is.EqualTo(Vector2.one));
+        Assert.That(leftFeedback.anchorMax, Is.EqualTo(Vector2.one));
+        Assert.That(leftFeedback.pivot, Is.EqualTo(Vector2.zero));
+        Assert.That(leftFeedback.anchoredPosition, Is.EqualTo(new Vector2(12f, 12f)));
+
+        showFeedback.Invoke(flow, new object[] { rightButton, sprite });
+        RectTransform rightFeedback = (RectTransform)rightButton.transform
+            .Find("Collectible Feedback");
+        Assert.That(rightFeedback, Is.Not.Null);
+        Assert.That(rightFeedback.anchorMin, Is.EqualTo(new Vector2(0f, 1f)));
+        Assert.That(rightFeedback.anchorMax, Is.EqualTo(new Vector2(0f, 1f)));
+        Assert.That(rightFeedback.pivot, Is.EqualTo(new Vector2(1f, 0f)));
+        Assert.That(rightFeedback.anchoredPosition, Is.EqualTo(new Vector2(-12f, 12f)));
+
+        Object.Destroy(sprite);
+        Object.Destroy(canvasObject);
+        yield return null;
+    }
+
+    [UnityTest]
     public IEnumerator ForumKeepsSharedStageTitlesVisibleUntilEveryPostIsRead()
     {
         GameObject root = new GameObject("Parallel Forum Post Test Root");

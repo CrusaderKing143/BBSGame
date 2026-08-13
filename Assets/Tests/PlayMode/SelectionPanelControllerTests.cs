@@ -515,6 +515,55 @@ public class SelectionPanelControllerTests
     }
 
     [UnityTest]
+    public IEnumerator PressingOrDraggingOverlappingCharacterBringsItToFront()
+    {
+        TestPanel panel = CreatePanel(backgroundOnly: true);
+        panel.Controller.OpenPanel();
+        yield return null;
+
+        panel.CharacterButton.onClick.Invoke();
+        SelectionItemView[] characterItems = GetActiveViews(panel.ItemRoot);
+        characterItems[0].Button.onClick.Invoke();
+        characterItems[1].Button.onClick.Invoke();
+
+        RectTransform placementRoot = panel.Layouts[0].CharacterPreview.rectTransform;
+        SelectionPlacedItemView[] placed = GetPlacedViews(placementRoot);
+        SelectionPlacedItemView first = placed.Single(view => view.ItemId == "character-main");
+        SelectionPlacedItemView second = placed.Single(view => view.ItemId == "character-1");
+        Assert.That(
+            second.transform.GetSiblingIndex(),
+            Is.GreaterThan(first.transform.GetSiblingIndex()));
+
+        EventSystem eventSystem = CreateEventSystem();
+        first.OnPointerDown(new PointerEventData(eventSystem));
+        Assert.That(
+            first.transform.GetSiblingIndex(),
+            Is.GreaterThan(second.transform.GetSiblingIndex()));
+
+        Vector2 secondCenter = RectTransformUtility.WorldToScreenPoint(
+            null,
+            second.RectTransform.position);
+        second.OnBeginDrag(new PointerEventData(eventSystem)
+        {
+            position = secondCenter
+        });
+        Assert.That(
+            second.transform.GetSiblingIndex(),
+            Is.GreaterThan(first.transform.GetSiblingIndex()));
+
+        panel.SubmitButton.onClick.Invoke();
+        Assert.That(panel.Controller.TryGetCommittedPlacement(
+            SelectionCategoryType.Character,
+            "character-main",
+            out SelectionPlacedItemData committedFirst), Is.True);
+        Assert.That(panel.Controller.TryGetCommittedPlacement(
+            SelectionCategoryType.Character,
+            "character-1",
+            out SelectionPlacedItemData committedSecond), Is.True);
+        Assert.That(committedSecond.DisplayOrder, Is.GreaterThan(committedFirst.DisplayOrder));
+    }
+
+    [UnityTest]
     public IEnumerator SnapshotFillsRecordImageByCenterCroppingAndResetRestoresTarget()
     {
         TestPanel panel = CreatePanel(backgroundOnly: true);
@@ -545,6 +594,74 @@ public class SelectionPanelControllerTests
         Assert.That(recordImage.texture, Is.Null);
         Assert.That(recordImage.color, Is.EqualTo(Color.black));
         yield return null;
+    }
+
+    [UnityTest]
+    public IEnumerator ItemRootShowsFiveRowsAndScrollsOnlyAfterTheTenthItem()
+    {
+        TestPanel tenItems = CreatePanel(
+            backgroundOnly: true,
+            propsItemCount: 10);
+        RectTransform tenItemViewport = (RectTransform)tenItems.ItemRoot;
+        float originalTop = GetRectTop(tenItemViewport);
+
+        tenItems.Controller.OpenPanel();
+        tenItems.PropsButton.onClick.Invoke();
+        yield return null;
+
+        ScrollRect tenItemScroll = tenItems.ItemRoot.GetComponent<ScrollRect>();
+        Assert.That(tenItemScroll, Is.Not.Null);
+        Assert.That(tenItemViewport.rect.height, Is.EqualTo(772f).Within(0.01f));
+        Assert.That(GetRectTop(tenItemViewport), Is.EqualTo(originalTop).Within(0.01f));
+        Assert.That(tenItemScroll.content.rect.height, Is.EqualTo(772f).Within(0.01f));
+        Assert.That(tenItemScroll.vertical, Is.False);
+        Assert.That(tenItemScroll.verticalScrollbar, Is.Null);
+        Assert.That(GetActiveViews(tenItems.ItemRoot), Has.Length.EqualTo(10));
+
+        TestPanel elevenItems = CreatePanel(
+            backgroundOnly: true,
+            propsItemCount: 11);
+        elevenItems.Controller.OpenPanel();
+        elevenItems.PropsButton.onClick.Invoke();
+        yield return null;
+
+        ScrollRect elevenItemScroll = elevenItems.ItemRoot.GetComponent<ScrollRect>();
+        Assert.That(elevenItemScroll, Is.Not.Null);
+        Assert.That(elevenItemScroll.content.rect.height, Is.EqualTo(930f).Within(0.01f));
+        Assert.That(elevenItemScroll.horizontal, Is.False);
+        Assert.That(elevenItemScroll.vertical, Is.True);
+        Assert.That(GetActiveViews(elevenItems.ItemRoot), Has.Length.EqualTo(11));
+
+        elevenItemScroll.verticalNormalizedPosition = 0f;
+        elevenItems.CharacterButton.onClick.Invoke();
+        elevenItems.PropsButton.onClick.Invoke();
+        yield return null;
+
+        Assert.That(elevenItemScroll.verticalNormalizedPosition, Is.EqualTo(1f).Within(0.01f));
+        Assert.That(
+            elevenItems.ItemRoot.Cast<Transform>().Count(
+                child => child.name == "ItemScrollContent"),
+            Is.EqualTo(1));
+
+        elevenItemScroll.verticalNormalizedPosition = 0f;
+        elevenItems.BackgroundButton.onClick.Invoke();
+        GetActiveViews(elevenItems.Layouts[0].ItemRoot)[1].Button.onClick.Invoke();
+        elevenItems.Layouts[1].PropsButton.onClick.Invoke();
+        yield return null;
+
+        ScrollRect secondLayoutScroll =
+            elevenItems.Layouts[1].ItemRoot.GetComponent<ScrollRect>();
+        Assert.That(secondLayoutScroll, Is.Not.Null);
+        Assert.That(secondLayoutScroll.verticalNormalizedPosition, Is.EqualTo(1f).Within(0.01f));
+        Assert.That(GetActiveViews(elevenItems.Layouts[1].ItemRoot), Has.Length.EqualTo(11));
+
+        elevenItems.Controller.OpenPanel();
+        yield return null;
+
+        Assert.That(
+            elevenItems.ItemRoot.Cast<Transform>().Count(
+                child => child.name == "ItemScrollContent"),
+            Is.EqualTo(1));
     }
 
     [UnityTest]
@@ -597,7 +714,8 @@ public class SelectionPanelControllerTests
         bool backgroundOnly = false,
         int backgroundItemCount = 2,
         int layoutCount = 2,
-        bool unlockAllItems = true)
+        bool unlockAllItems = true,
+        int propsItemCount = 5)
     {
         GameObject root = Track(new GameObject("Selection Test Root"));
         GameObject panelObject = new GameObject("BBSChoose", typeof(RectTransform));
@@ -621,7 +739,7 @@ public class SelectionPanelControllerTests
         {
             CreateCategory(SelectionCategoryType.Character, 2),
             CreateCategory(SelectionCategoryType.Background, backgroundItemCount),
-            CreateCategory(SelectionCategoryType.Props, 5)
+            CreateCategory(SelectionCategoryType.Props, propsItemCount)
         };
 
         SetField(controller, "itemViewPrefab", itemViewPrefab);
@@ -682,6 +800,17 @@ public class SelectionPanelControllerTests
             "ItemRoot",
             typeof(RectTransform),
             typeof(GridLayoutGroup)).transform;
+        RectTransform itemRootRect = (RectTransform)itemRoot;
+        itemRootRect.anchorMin = new Vector2(0f, 1f);
+        itemRootRect.anchorMax = new Vector2(0f, 1f);
+        itemRootRect.pivot = new Vector2(0.5f, 0.5f);
+        itemRootRect.anchoredPosition = new Vector2(-523f, 67.5f);
+        itemRootRect.sizeDelta = new Vector2(353.9f, 650f);
+        GridLayoutGroup itemGrid = itemRoot.GetComponent<GridLayoutGroup>();
+        itemGrid.cellSize = new Vector2(140f, 140f);
+        itemGrid.spacing = new Vector2(18f, 18f);
+        itemGrid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+        itemGrid.constraintCount = 2;
         Image characterPreview = CreateImage(layoutRoot.transform, "CharacterPreview");
         Image propsPreview = CreateImage(layoutRoot.transform, "PropsPreview");
         characterPreview.rectTransform.sizeDelta = new Vector2(100f, 100f);
@@ -806,6 +935,12 @@ public class SelectionPanelControllerTests
             .GetComponentsInChildren<SelectionItemView>(false)
             .OrderBy(view => view.transform.GetSiblingIndex())
             .ToArray();
+    }
+
+    private static float GetRectTop(RectTransform rectTransform)
+    {
+        return rectTransform.anchoredPosition.y
+            + (1f - rectTransform.pivot.y) * rectTransform.rect.height;
     }
 
     private static SelectionPlacedItemView[] GetPlacedViews(Transform placementRoot)

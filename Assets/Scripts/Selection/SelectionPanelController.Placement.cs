@@ -105,6 +105,7 @@ public sealed partial class SelectionPanelController
         }
 
         SelectDraftPlacement(view.CategoryType, view.ItemId);
+        BringPlacementToFront(view.CategoryType, view.ItemId);
         eventData?.Use();
     }
 
@@ -118,6 +119,7 @@ public sealed partial class SelectionPanelController
         }
 
         SelectDraftPlacement(view.CategoryType, view.ItemId);
+        BringPlacementToFront(view.CategoryType, view.ItemId);
         RectTransform placementLayer = GetPlacementLayer(view.CategoryType);
         if (placementLayer == null)
         {
@@ -306,6 +308,7 @@ public sealed partial class SelectionPanelController
         draftSelections[ToIndex(categoryType)] = itemIndex;
         placementToolMode = SelectionPlacementToolMode.Move;
         SelectDraftPlacement(categoryType, item.ItemId);
+        BringPlacementToFront(categoryType, item.ItemId);
         RebuildPlacementViews();
         RefreshPlacementSelectionMarks();
         RefreshSubmitButton();
@@ -481,6 +484,33 @@ public sealed partial class SelectionPanelController
                 view.transform.SetSiblingIndex(index);
             }
         }
+    }
+
+    private void BringPlacementToFront(
+        SelectionCategoryType categoryType,
+        string itemId)
+    {
+        SelectionPlacedItemData selectedPlacement = FindPlacement(
+            draftPlacements,
+            categoryType,
+            itemId);
+        if (selectedPlacement == null)
+        {
+            return;
+        }
+
+        List<SelectionPlacedItemData> categoryPlacements = draftPlacements.FindAll(
+            placement => placement != null && placement.CategoryType == categoryType);
+        categoryPlacements.Sort((left, right) => left.DisplayOrder.CompareTo(right.DisplayOrder));
+        categoryPlacements.Remove(selectedPlacement);
+        categoryPlacements.Add(selectedPlacement);
+
+        for (int index = 0; index < categoryPlacements.Count; index++)
+        {
+            categoryPlacements[index].SetDisplayOrder(index);
+        }
+
+        ApplyPlacementSiblingOrder(categoryType);
     }
 
     private void ApplyPlacementTransform(

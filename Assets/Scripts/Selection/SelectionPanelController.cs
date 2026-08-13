@@ -854,6 +854,7 @@ public sealed partial class SelectionPanelController : MonoBehaviour
                 () => SelectItem(categoryType, capturedIndex));
         }
 
+        RefreshActiveItemScroll(visibleItemIndices.Count);
         RefreshSubmitButton();
     }
 
@@ -890,9 +891,15 @@ public sealed partial class SelectionPanelController : MonoBehaviour
 
     private void EnsureItemViewCapacity(int requiredCount)
     {
+        Transform itemViewParent = GetActiveItemViewParent();
+        if (itemViewParent == null)
+        {
+            return;
+        }
+
         while (itemViews.Count < requiredCount)
         {
-            SelectionItemView itemView = Instantiate(itemViewPrefab, activeLayout.ItemRoot);
+            SelectionItemView itemView = Instantiate(itemViewPrefab, itemViewParent);
             itemView.name = $"SelectionItem_{itemViews.Count:00}";
             itemViews.Add(itemView);
         }
@@ -900,16 +907,17 @@ public sealed partial class SelectionPanelController : MonoBehaviour
 
     private void MoveItemViewsToActiveRoot()
     {
-        if (activeLayout?.ItemRoot == null)
+        Transform itemViewParent = GetActiveItemViewParent();
+        if (itemViewParent == null)
         {
             return;
         }
 
         foreach (SelectionItemView itemView in itemViews)
         {
-            if (itemView != null && itemView.transform.parent != activeLayout.ItemRoot)
+            if (itemView != null && itemView.transform.parent != itemViewParent)
             {
-                itemView.transform.SetParent(activeLayout.ItemRoot, false);
+                itemView.transform.SetParent(itemViewParent, false);
             }
         }
     }

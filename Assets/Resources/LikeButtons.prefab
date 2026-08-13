@@ -132,6 +132,7 @@ GameObject:
   - component: {fileID: 5567173019653820639}
   - component: {fileID: 713081336409174806}
   - component: {fileID: 5848073810659354359}
+  - component: {fileID: 7193152726338942104}
   m_Layer: 0
   m_Name: Like
   m_TagString: Untagged
@@ -240,6 +241,30 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls: []
+--- !u!114 &7193152726338942104
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5693752760443795851}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7b4d3fd74e6743bd86c22d1a298f7e54, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::HeartBurstButtonEffect
+  button: {fileID: 5848073810659354359}
+  heartSprite: {fileID: 21300000, guid: e45159d29d40ebf4dae986f6861ebaaf, type: 3}
+  heartCount: 5
+  heartSize: {x: 42, y: 36}
+  horizontalSpawnRange: 30
+  riseDistanceRange: {x: 65, y: 110}
+  horizontalDriftRange: 24
+  rotationRange: 18
+  durationRange: {x: 0.75, y: 0.95}
+  startScale: 0.55
+  fadeStartNormalized: 0.5
+  sortingOrder: 100
 --- !u!1 &6604105102839959416
 GameObject:
   m_ObjectHideFlags: 0

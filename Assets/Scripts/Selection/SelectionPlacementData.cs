@@ -73,6 +73,11 @@ public sealed class SelectionPlacedItemData
     {
         scale = Mathf.Clamp(value, 0.1f, 5f);
     }
+
+    internal void SetDisplayOrder(int value)
+    {
+        displayOrder = Mathf.Max(0, value);
+    }
 }
 
 [Serializable]

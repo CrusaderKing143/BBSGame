@@ -313,10 +313,19 @@ public class StoryFlowController : MonoBehaviour
         feedbackObject.transform.SetAsLastSibling();
 
         RectTransform feedbackRect = feedbackObject.GetComponent<RectTransform>();
-        feedbackRect.anchorMin = Vector2.one;
-        feedbackRect.anchorMax = Vector2.one;
-        feedbackRect.pivot = Vector2.zero;
-        feedbackRect.anchoredPosition = collectibleFeedbackOffset;
+        bool placeOnLeft = IsButtonInRightCanvasHalf(sourceButton);
+        Vector2 feedbackAnchor = placeOnLeft
+            ? new Vector2(0f, 1f)
+            : Vector2.one;
+        float horizontalOffset = Mathf.Abs(collectibleFeedbackOffset.x);
+        feedbackRect.anchorMin = feedbackAnchor;
+        feedbackRect.anchorMax = feedbackAnchor;
+        feedbackRect.pivot = placeOnLeft
+            ? new Vector2(1f, 0f)
+            : Vector2.zero;
+        feedbackRect.anchoredPosition = new Vector2(
+            placeOnLeft ? -horizontalOffset : horizontalOffset,
+            collectibleFeedbackOffset.y);
         feedbackRect.sizeDelta = new Vector2(
             collectibleFeedbackSize.x > 0f ? collectibleFeedbackSize.x : 96f,
             collectibleFeedbackSize.y > 0f ? collectibleFeedbackSize.y : 96f);
@@ -339,6 +348,27 @@ public class StoryFlowController : MonoBehaviour
         };
         activeCollectibleFeedbacks.Add(feedback);
         feedback.Coroutine = StartCoroutine(AnimateCollectibleFeedback(feedback));
+    }
+
+    private static bool IsButtonInRightCanvasHalf(Button sourceButton)
+    {
+        if (sourceButton == null
+            || !(sourceButton.transform is RectTransform buttonRect))
+        {
+            return false;
+        }
+
+        Canvas parentCanvas = sourceButton.GetComponentInParent<Canvas>();
+        Canvas rootCanvas = parentCanvas != null ? parentCanvas.rootCanvas : null;
+        if (rootCanvas == null
+            || !(rootCanvas.transform is RectTransform canvasRect))
+        {
+            return false;
+        }
+
+        Vector3 buttonWorldCenter = buttonRect.TransformPoint(buttonRect.rect.center);
+        Vector3 buttonCanvasCenter = canvasRect.InverseTransformPoint(buttonWorldCenter);
+        return buttonCanvasCenter.x > canvasRect.rect.center.x;
     }
 
     private IEnumerator AnimateCollectibleFeedback(CollectibleFeedbackRuntime feedback)
