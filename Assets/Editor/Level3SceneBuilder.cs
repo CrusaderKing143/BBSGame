@@ -848,6 +848,7 @@ public static class Level3SceneBuilder
         allowedCharacters.GetArrayElementAtIndex(0).stringValue = AssistantItemId;
         allowedCharacters.GetArrayElementAtIndex(1).stringValue = PaparazziItemId;
         roundThree.FindPropertyRelative("singleCharacterPlacement").boolValue = true;
+        roundThree.FindPropertyRelative("defaultCharacterItemId").stringValue = AssistantItemId;
 
         serializedSelection.ApplyModifiedPropertiesWithoutUndo();
     }

@@ -92,6 +92,7 @@ public sealed class SelectionRoundBackgroundDefinition
     [SerializeField] private SelectionCategoryType[] requiredCategoriesOverride;
     [SerializeField] private string[] allowedCharacterItemIds;
     [SerializeField] private bool singleCharacterPlacement;
+    [SerializeField] private string defaultCharacterItemId;
 
     public int RoundIndex => roundIndex;
     public SelectionItemDefinition[] Items => items;
@@ -99,6 +100,7 @@ public sealed class SelectionRoundBackgroundDefinition
     public SelectionCategoryType[] RequiredCategoriesOverride => requiredCategoriesOverride;
     public string[] AllowedCharacterItemIds => allowedCharacterItemIds;
     public bool SingleCharacterPlacement => singleCharacterPlacement;
+    public string DefaultCharacterItemId => defaultCharacterItemId;
 }
 
 public sealed partial class SelectionPanelController : MonoBehaviour
@@ -332,6 +334,7 @@ public sealed partial class SelectionPanelController : MonoBehaviour
         CopySelections(committedSelections, draftSelections);
         CopyCommittedPlacementsToDraft();
         SelectDefaultBackgroundIfNeeded();
+        PlaceDefaultCharacterIfNeeded();
         currentCategory = categoryLookup.ContainsKey(initialCategory)
             ? initialCategory
             : SelectionCategoryType.Character;
@@ -1162,7 +1165,8 @@ public sealed partial class SelectionPanelController : MonoBehaviour
             return true;
         }
 
-        if (categoryType == SelectionCategoryType.Character && item.UnlockedByDefault)
+        if (categoryType == SelectionCategoryType.Character
+            && (item.UnlockedByDefault || IsCurrentRoundDefaultCharacter(item.ItemId)))
         {
             return true;
         }
@@ -1197,31 +1201,80 @@ public sealed partial class SelectionPanelController : MonoBehaviour
         return false;
     }
 
+    private bool IsCurrentRoundDefaultCharacter(string itemId)
+    {
+        return !string.IsNullOrWhiteSpace(itemId)
+            && string.Equals(
+                activeRoundBackground?.DefaultCharacterItemId,
+                itemId,
+                StringComparison.Ordinal);
+    }
+
+    private bool IsAllowedDefaultCharacter(string itemId)
+    {
+        string[] allowedItemIds = activeRoundBackground?.AllowedCharacterItemIds;
+        if (string.IsNullOrWhiteSpace(itemId)
+            || allowedItemIds == null
+            || allowedItemIds.Length == 0)
+        {
+            return false;
+        }
+
+        foreach (string allowedItemId in allowedItemIds)
+        {
+            if (string.Equals(allowedItemId, itemId, StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private bool ValidateCurrentRoundCharacterRules(bool logWarnings)
     {
         string[] allowedItemIds = activeRoundBackground?.AllowedCharacterItemIds;
-        if (allowedItemIds == null || allowedItemIds.Length == 0)
+        string defaultCharacterItemId = activeRoundBackground?.DefaultCharacterItemId;
+        if ((allowedItemIds == null || allowedItemIds.Length == 0)
+            && string.IsNullOrWhiteSpace(defaultCharacterItemId))
         {
             return true;
         }
 
         bool valid = true;
         HashSet<string> uniqueItemIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (string itemId in allowedItemIds)
+        if (allowedItemIds != null)
         {
-            if (string.IsNullOrWhiteSpace(itemId)
-                || !uniqueItemIds.Add(itemId)
-                || !TryFindItem(
-                    SelectionCategoryType.Character,
-                    itemId,
-                    out _,
-                    out _))
+            foreach (string itemId in allowedItemIds)
             {
-                valid = false;
-                WarnIfRequested(
-                    $"Round {configuredRoundIndex} allowed Character item ID '{itemId}' is missing or duplicated.",
-                    logWarnings);
+                if (string.IsNullOrWhiteSpace(itemId)
+                    || !uniqueItemIds.Add(itemId)
+                    || !TryFindItem(
+                        SelectionCategoryType.Character,
+                        itemId,
+                        out _,
+                        out _))
+                {
+                    valid = false;
+                    WarnIfRequested(
+                        $"Round {configuredRoundIndex} allowed Character item ID '{itemId}' is missing or duplicated.",
+                        logWarnings);
+                }
             }
+        }
+
+        if (!string.IsNullOrWhiteSpace(defaultCharacterItemId)
+            && (!TryFindItem(
+                    SelectionCategoryType.Character,
+                    defaultCharacterItemId,
+                    out _,
+                    out _)
+                || !IsAllowedDefaultCharacter(defaultCharacterItemId)))
+        {
+            valid = false;
+            WarnIfRequested(
+                $"Round {configuredRoundIndex} default Character item ID '{defaultCharacterItemId}' must exist in Character items and the current Round whitelist.",
+                logWarnings);
         }
 
         return valid;

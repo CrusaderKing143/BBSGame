@@ -311,6 +311,10 @@ public class SelectionPanelControllerTests
                 "character-day3-paparazzi"
             });
         SetField(roundBackground, "singleCharacterPlacement", true);
+        SetField(
+            roundBackground,
+            "defaultCharacterItemId",
+            "character-day3-assistant");
         SetField(panel.Controller, "roundBackgrounds", new[] { roundBackground });
         SetField(
             panel.Controller,
@@ -320,17 +324,25 @@ public class SelectionPanelControllerTests
         panel.Controller.ConfigureForRound(2);
         Assert.That(panel.Controller.CollectItem(
             SelectionCategoryType.Character,
-            "character-day3-assistant"), Is.True);
-        Assert.That(panel.Controller.CollectItem(
-            SelectionCategoryType.Character,
             "character-day3-paparazzi"), Is.True);
         panel.Controller.OpenPanel();
         yield return null;
 
         Assert.That(GetActiveViews(panel.ItemRoot), Has.Length.EqualTo(2));
-        Assert.That(panel.SubmitButton.interactable, Is.False);
+        Assert.That(panel.SubmitButton.interactable, Is.True);
+        SelectionPlacedItemView defaultAssistant =
+            GetPlacedViews(panel.Layouts[0].CharacterPreview.rectTransform).Single();
+        Assert.That(defaultAssistant.ItemId, Is.EqualTo("character-day3-assistant"));
+        Assert.That(defaultAssistant.RectTransform.localPosition.x, Is.EqualTo(0f).Within(0.01f));
+        Assert.That(defaultAssistant.RectTransform.localPosition.y, Is.EqualTo(0f).Within(0.01f));
+        Assert.That(GetActiveViews(panel.ItemRoot)[0].IsSelected, Is.True);
 
-        GetActiveViews(panel.ItemRoot)[0].Button.onClick.Invoke();
+        Assert.That(panel.Controller.DeleteSelectedDraftItem(), Is.True);
+        Assert.That(panel.SubmitButton.interactable, Is.False);
+        panel.Controller.CancelAndClose();
+        panel.Controller.OpenPanel();
+        yield return null;
+
         Assert.That(
             GetPlacedViews(panel.Layouts[0].CharacterPreview.rectTransform).Single().ItemId,
             Is.EqualTo("character-day3-assistant"));
@@ -342,6 +354,39 @@ public class SelectionPanelControllerTests
         Assert.That(placedCharacters, Has.Length.EqualTo(1));
         Assert.That(placedCharacters[0].ItemId, Is.EqualTo("character-day3-paparazzi"));
         Assert.That(panel.SubmitButton.interactable, Is.True);
+
+        panel.Controller.Submit();
+        panel.Controller.OpenPanel();
+        yield return null;
+
+        Assert.That(
+            GetPlacedViews(panel.Layouts[0].CharacterPreview.rectTransform).Single().ItemId,
+            Is.EqualTo("character-day3-paparazzi"));
+    }
+
+    [UnityTest]
+    public IEnumerator RoundDefaultCharacterMustExistAndBeWhitelisted()
+    {
+        TestPanel missing = CreatePanel(backgroundOnly: true, unlockAllItems: false);
+        SelectionRoundBackgroundDefinition missingDefinition =
+            CreateRoundCharacterDefinition(missing, "missing-character", new[] { "missing-character" });
+        SetField(missing.Controller, "roundBackgrounds", new[] { missingDefinition });
+        missing.Controller.ConfigureForRound(2);
+        Assert.That(missing.Controller.IsConfigurationValid(), Is.False);
+
+        TestPanel notWhitelisted = CreatePanel(backgroundOnly: true, unlockAllItems: false);
+        SelectionRoundBackgroundDefinition notWhitelistedDefinition =
+            CreateRoundCharacterDefinition(
+                notWhitelisted,
+                "character-main",
+                new[] { "character-1" });
+        SetField(
+            notWhitelisted.Controller,
+            "roundBackgrounds",
+            new[] { notWhitelistedDefinition });
+        notWhitelisted.Controller.ConfigureForRound(2);
+        Assert.That(notWhitelisted.Controller.IsConfigurationValid(), Is.False);
+        yield return null;
     }
 
     [UnityTest]
@@ -782,6 +827,34 @@ public class SelectionPanelControllerTests
         }
 
         return new TestPanel(panelObject, controller, layouts);
+    }
+
+    private SelectionRoundBackgroundDefinition CreateRoundCharacterDefinition(
+        TestPanel panel,
+        string defaultCharacterItemId,
+        string[] allowedCharacterItemIds)
+    {
+        SelectionItemDefinition[] roundItems =
+            CreateCategory(SelectionCategoryType.Background, 1).Items;
+        SetField(roundItems[0], "itemId", "cafe");
+
+        SelectionRoundBackgroundDefinition definition =
+            new SelectionRoundBackgroundDefinition();
+        SetField(definition, "roundIndex", 2);
+        SetField(definition, "items", roundItems);
+        SetField(definition, "layouts", new[] { panel.Layouts[0].Definition });
+        SetField(
+            definition,
+            "requiredCategoriesOverride",
+            new[]
+            {
+                SelectionCategoryType.Character,
+                SelectionCategoryType.Background
+            });
+        SetField(definition, "allowedCharacterItemIds", allowedCharacterItemIds);
+        SetField(definition, "singleCharacterPlacement", true);
+        SetField(definition, "defaultCharacterItemId", defaultCharacterItemId);
+        return definition;
     }
 
     private TestLayout CreateLayout(Transform panelRoot, int layoutIndex)

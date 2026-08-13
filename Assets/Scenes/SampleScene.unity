@@ -19358,6 +19358,7 @@ MonoBehaviour:
     - character-day3-assistant
     - character-day3-paparazzi
     singleCharacterPlacement: 1
+    defaultCharacterItemId: character-day3-assistant
   requiredCategories: 01000000
   initialCategory: 0
   onSubmitted:

@@ -336,6 +336,35 @@ public sealed partial class SelectionPanelController
         }
     }
 
+    private void PlaceDefaultCharacterIfNeeded()
+    {
+        string defaultItemId = activeRoundBackground?.DefaultCharacterItemId;
+        if (string.IsNullOrWhiteSpace(defaultItemId)
+            || HasValidDraftPlacement(SelectionCategoryType.Character)
+            || !IsAllowedDefaultCharacter(defaultItemId)
+            || !TryFindItem(
+                SelectionCategoryType.Character,
+                defaultItemId,
+                out int itemIndex,
+                out SelectionItemDefinition item)
+            || !IsItemAvailable(SelectionCategoryType.Character, item)
+            || GetPlacementSprite(item) == null)
+        {
+            return;
+        }
+
+        draftPlacements.Add(new SelectionPlacedItemData(
+            SelectionCategoryType.Character,
+            defaultItemId,
+            new Vector2(0.5f, 0.5f),
+            0f,
+            item.InitialDisplayScale,
+            GetNextDisplayOrder(SelectionCategoryType.Character)));
+        draftSelections[ToIndex(SelectionCategoryType.Character)] = itemIndex;
+        placementToolMode = SelectionPlacementToolMode.Move;
+        SelectDraftPlacement(SelectionCategoryType.Character, defaultItemId);
+    }
+
     private void CopyCommittedPlacementsToDraft()
     {
         CopyPlacements(committedPlacements, draftPlacements);
