@@ -1,10 +1,13 @@
 fileFormatVersion: 2
-guid: f7ae2f1490d6122429a2a5bfbf4c15a3
+guid: 4d45ccef2d31bac429f71b5cf4bb5341
 TextureImporter:
   internalIDToNameTable:
   - first:
-      213: 2966724483245006991
-    second: "\u62D6\u52A8\u6761_0"
+      213: 2081919950881369135
+    second: "\u5496\u5561\u5385\u6539_00005_0"
+  - first:
+      213: 8988350667007153837
+    second: "\u5496\u5561\u5385\u6539_00005_1"
   externalObjects: {}
   serializedVersion: 13
   mipmaps:
@@ -100,13 +103,13 @@ TextureImporter:
     serializedVersion: 2
     sprites:
     - serializedVersion: 2
-      name: "\u62D6\u52A8\u6761_0"
+      name: "\u5496\u5561\u5385\u6539_00005_0"
       rect:
         serializedVersion: 2
-        x: 0
-        y: 0
-        width: 16
-        height: 265
+        x: 17
+        y: 277
+        width: 24
+        height: 14
       alignment: 0
       pivot: {x: 0, y: 0}
       border: {x: 0, y: 0, z: 0, w: 0}
@@ -115,8 +118,30 @@ TextureImporter:
       physicsShape: []
       tessellationDetail: -1
       bones: []
-      spriteID: f80e54af23ceb2920800000000000000
-      internalID: 2966724483245006991
+      spriteID: f2c25133a2774ec10800000000000000
+      internalID: 2081919950881369135
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: "\u5496\u5561\u5385\u6539_00005_1"
+      rect:
+        serializedVersion: 2
+        x: 27
+        y: 282
+        width: 179
+        height: 94
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: da65b9f2f490dbc70800000000000000
+      internalID: 8988350667007153837
       vertices: []
       indices: 
       edges: []
@@ -135,7 +160,8 @@ TextureImporter:
     spriteCustomMetadata:
       entries: []
     nameFileIdTable:
-      "\u62D6\u52A8\u6761_0": 2966724483245006991
+      "\u5496\u5561\u5385\u6539_00005_0": 2081919950881369135
+      "\u5496\u5561\u5385\u6539_00005_1": 8988350667007153837
   mipmapLimitGroupName: 
   pSDRemoveMatte: 0
   userData: 
