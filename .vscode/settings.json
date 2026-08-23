@@ -56,5 +56,6 @@
         "temp/": true,
         "Temp/": true
     },
-    "dotnet.defaultSolution": "BBSGame.sln"
+    "dotnet.defaultSolution": "BBSGame.sln",
+    "dotnet.preferCSharpExtension": true
 }

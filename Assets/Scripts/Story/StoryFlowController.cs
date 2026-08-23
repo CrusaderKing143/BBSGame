@@ -7,6 +7,9 @@ using UnityEngine.Video;
 public class StoryFlowController : MonoBehaviour
 {
     private const string CollectibleFeedbackObjectName = "Collectible Feedback";
+    private const string MailNotificationResourcePath = "MainPanel/联系人_消息";
+    private const string ForumNotificationResourcePath = "MainPanel/论坛_消息";
+    private const string PictureNotificationResourcePath = "MainPanel/照片_消息";
 
     private sealed class CollectibleFeedbackRuntime
     {
@@ -15,9 +18,13 @@ public class StoryFlowController : MonoBehaviour
     }
 
     [Header("Main Icons")]
+    [SerializeField] private Button computerButton;
     [SerializeField] private Button mailButton;
     [SerializeField] private Button forumButton;
     [SerializeField] private Button pictureButton;
+    [SerializeField] private Sprite mailNotificationSprite;
+    [SerializeField] private Sprite forumNotificationSprite;
+    [SerializeField] private Sprite pictureNotificationSprite;
 
     [Header("Panels")]
     [SerializeField] private MailPanelController mailPanelController;
@@ -41,6 +48,9 @@ public class StoryFlowController : MonoBehaviour
         new List<CollectibleFeedbackRuntime>();
     private SelectionPostBranchData openedSelectionBranch;
     private VideoClip defaultEndingVideoClip;
+    private Sprite mailDefaultSprite;
+    private Sprite forumDefaultSprite;
+    private Sprite pictureDefaultSprite;
     private bool storyEnded;
 
     public int CurrentRoundIndex => progress.CurrentRoundIndex;
@@ -49,6 +59,42 @@ public class StoryFlowController : MonoBehaviour
     private void Awake()
     {
         defaultEndingVideoClip = endVideoPlayer != null ? endVideoPlayer.clip : null;
+        ResolveMainIconVisuals();
+    }
+
+    private void ResolveMainIconVisuals()
+    {
+        if (computerButton == null && mailButton != null)
+        {
+            Transform computerTransform = mailButton.transform.parent?.Find("Computer");
+            computerButton = computerTransform != null
+                ? computerTransform.GetComponent<Button>()
+                : null;
+        }
+
+        if (mailNotificationSprite == null)
+        {
+            mailNotificationSprite = Resources.Load<Sprite>(MailNotificationResourcePath);
+        }
+
+        if (forumNotificationSprite == null)
+        {
+            forumNotificationSprite = Resources.Load<Sprite>(ForumNotificationResourcePath);
+        }
+
+        if (pictureNotificationSprite == null)
+        {
+            pictureNotificationSprite = Resources.Load<Sprite>(PictureNotificationResourcePath);
+        }
+
+        mailDefaultSprite = GetButtonSprite(mailButton);
+        forumDefaultSprite = GetButtonSprite(forumButton);
+        pictureDefaultSprite = GetButtonSprite(pictureButton);
+
+        MakeDisabledStateOpaque(computerButton);
+        MakeDisabledStateOpaque(mailButton);
+        MakeDisabledStateOpaque(forumButton);
+        MakeDisabledStateOpaque(pictureButton);
     }
 
     private void Start()
@@ -587,6 +633,7 @@ public class StoryFlowController : MonoBehaviour
         if (storyEnded)
         {
             SetMainButtonsInteractable(false);
+            SetMainIconNotifications(false, false, false);
             return;
         }
 
@@ -597,23 +644,34 @@ public class StoryFlowController : MonoBehaviour
             selectionPanelController?.ConfigureForRound(progress.CurrentRoundIndex);
         }
 
+        bool mailAvailable = currentRound?.mail?.IsValid == true;
+        bool forumAvailable = CanOpenForum();
+        bool pictureAvailable = currentRound?.HasSelectionPost == true
+            && progress.CanOpenSelection
+            && selectionPanelController != null
+            && selectionPanelController.IsConfigurationValid();
+
         if (mailButton != null)
         {
-            mailButton.interactable = currentRound?.mail?.IsValid == true;
+            mailButton.interactable = mailAvailable;
         }
 
         if (forumButton != null)
         {
-            forumButton.interactable = CanOpenForum();
+            forumButton.interactable = forumAvailable;
         }
 
         if (pictureButton != null)
         {
-            pictureButton.interactable = currentRound?.HasSelectionPost == true
-                && progress.CanOpenSelection
-                && selectionPanelController != null
-                && selectionPanelController.IsConfigurationValid();
+            pictureButton.interactable = pictureAvailable;
         }
+
+        SetMainIconNotifications(
+            mailAvailable
+                && !progress.MailRead
+                && progress.Phase == StoryRoundPhase.AwaitingMail,
+            forumAvailable && progress.Phase == StoryRoundPhase.ReadingPosts,
+            pictureAvailable && progress.Phase == StoryRoundPhase.AwaitingSelection);
 
         mailPanelController?.RefreshMailButtons(rounds, progress.CurrentRoundIndex);
         forumPanelController?.RefreshPostButtons(
@@ -646,6 +704,7 @@ public class StoryFlowController : MonoBehaviour
         mailPanelController?.HidePanel(rounds);
         forumPanelController?.HideAll(rounds);
         SetMainButtonsInteractable(false);
+        SetMainIconNotifications(false, false, false);
 
         if (endVideoRoot != null)
         {
@@ -708,6 +767,54 @@ public class StoryFlowController : MonoBehaviour
         if (pictureButton != null)
         {
             pictureButton.interactable = interactable;
+        }
+    }
+
+    private void SetMainIconNotifications(
+        bool showMailNotification,
+        bool showForumNotification,
+        bool showPictureNotification)
+    {
+        SetButtonSprite(
+            mailButton,
+            showMailNotification ? mailNotificationSprite : mailDefaultSprite);
+        SetButtonSprite(
+            forumButton,
+            showForumNotification ? forumNotificationSprite : forumDefaultSprite);
+        SetButtonSprite(
+            pictureButton,
+            showPictureNotification ? pictureNotificationSprite : pictureDefaultSprite);
+    }
+
+    private static Sprite GetButtonSprite(Button button)
+    {
+        return button != null && button.image != null
+            ? button.image.sprite
+            : null;
+    }
+
+    private static void SetButtonSprite(Button button, Sprite sprite)
+    {
+        if (button != null && button.image != null && sprite != null)
+        {
+            button.image.sprite = sprite;
+        }
+    }
+
+    private static void MakeDisabledStateOpaque(Button button)
+    {
+        if (button == null)
+        {
+            return;
+        }
+
+        ColorBlock colors = button.colors;
+        colors.disabledColor = Color.white;
+        button.colors = colors;
+
+        if (button.targetGraphic != null)
+        {
+            button.targetGraphic.color = Color.white;
         }
     }
 
