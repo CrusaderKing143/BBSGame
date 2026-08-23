@@ -7,6 +7,7 @@ public class ForumPanelController : MonoBehaviour
     [SerializeField] private GameObject welcomePanel;
     [SerializeField] private GameObject postListPanel;
     [SerializeField] private GameObject postContentPanel;
+    [SerializeField] private GameObject postListMainButton;
     [SerializeField] private Button enterForumButton;
     [SerializeField] private Button postBackButton;
 
@@ -66,6 +67,8 @@ public class ForumPanelController : MonoBehaviour
         int currentRoundIndex,
         StoryProgress progress)
     {
+        SetActive(ResolvePostListMainButton(), progress?.CanOpenSelection != true);
+
         if (rounds == null)
         {
             return;
@@ -122,6 +125,20 @@ public class ForumPanelController : MonoBehaviour
                 resultPostButton.interactable = resultPostUnlocked;
             }
         }
+    }
+
+    private GameObject ResolvePostListMainButton()
+    {
+        if (postListMainButton == null && postListPanel != null)
+        {
+            Transform buttonTransform = postListPanel.transform.Find("BBSMain");
+            if (buttonTransform != null)
+            {
+                postListMainButton = buttonTransform.gameObject;
+            }
+        }
+
+        return postListMainButton;
     }
 
     private static PostData GetPost(StoryRoundData[] rounds, int roundIndex, int postIndex)

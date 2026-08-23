@@ -17939,6 +17939,7 @@ MonoBehaviour:
   welcomePanel: {fileID: 365459111}
   postListPanel: {fileID: 49989056}
   postContentPanel: {fileID: 506646135}
+  postListMainButton: {fileID: 1426121651}
   enterForumButton: {fileID: 486625800}
   postBackButton: {fileID: 1115403260}
 --- !u!114 &1127720862
